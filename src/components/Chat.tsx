@@ -10,7 +10,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hi! I'm Sonic AI. How can I help you with Sonic or SVM technology today? 🚀"
+      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, DeFi activities, or request test tokens by typing 'faucet [your wallet address]'! 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +55,20 @@ export default function Chat() {
         // Validate wallet address
         if (isValidSonicAddress(address)) {
           await checkWalletBalance(address);
+          return;
+        }
+      }
+
+      // Check if the message is asking for test tokens (faucet request)
+      const faucetRegex = /(?:faucet|test tokens|send me tokens|airdrop|test sol).*?([\w\d]{32,44})/i;
+      const faucetMatch = content.match(faucetRegex);
+      
+      if (faucetMatch && faucetMatch[1]) {
+        const address = faucetMatch[1].trim();
+        
+        // Validate wallet address
+        if (isValidSonicAddress(address)) {
+          await requestFaucetTokens(address);
           return;
         }
       }
@@ -169,6 +183,49 @@ export default function Chat() {
     }
   };
 
+  // Helper function to request faucet tokens
+  const requestFaucetTokens = async (address: string) => {
+    try {
+      // Call the faucet API
+      const response = await fetch('/api/faucet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ address }),
+      });
+
+      const faucetData = await response.json();
+      
+      // Format the response
+      let responseContent = '';
+      if (!faucetData.success) {
+        // Remove "Error:" prefix if it exists in the error message
+        const errorMessage = faucetData.error || 'Failed to request tokens from the faucet';
+        responseContent = errorMessage.startsWith('Error:') ? errorMessage : errorMessage;
+      } else {
+        responseContent = `**Success!** Tokens have been sent to your wallet: ${address.slice(0, 6)}...${address.slice(-4)}`;
+        if (faucetData.message) {
+          responseContent += `\n\n${faucetData.message}`;
+        }
+      }
+
+      // Add the response to the chat
+      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error requesting faucet tokens:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, there was an error connecting to the faucet service. Please try again later.',
+        },
+      ]);
+      setIsLoading(false);
+    }
+  };
+
   // If there are no messages, show a welcome screen
   if (messages.length === 0) {
     return (
@@ -180,7 +237,7 @@ export default function Chat() {
               Your guide to the first atomic SVM chain for sovereign economies
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Ask me about HyperGrid, Sorada, Rush, or how to deploy on Sonic!
+              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances or request test tokens.
             </p>
           </div>
         </div>

@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from '../lib/wallet-utils';
+import { requestFaucetTokens, formatFaucetResponse } from '../lib/faucet-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -69,6 +70,14 @@ Key Technologies:
 
 3. Rush: An Entity-Component-System (ECS) framework that provides composable gaming primitives and extensible data types on-chain
 
+Key Ecosystem Projects:
+1. Sega (https://sega.so/): The leading DEX and liquidity protocol on Sonic SVM
+   - Powers the next generation of attention crypto
+   - Offers token swaps with low fees and fast execution
+   - Allows users to provide liquidity and earn yield
+   - Features portfolio tracking by asset and liquidity positions
+   - Users can manage their DeFi activities all in one place
+
 Key Features:
 - Lightning Speed at Low Cost: Sonic offers an extremely fast on-chain game experience amongst all gaming L1s
 - Composable Gaming Primitives & Sandbox Environment: Native composable gaming primitives and extensible data types
@@ -80,10 +89,12 @@ Practical Knowledge:
 - Sonic has a devnet accessible at https://devnet.sonic.game
 - Sonic Explorer is available at https://explorer.sonic.game
 - Sonic Faucet is available at https://faucet.sonic.game
+- For DeFi activities, users can visit Sega at https://sega.so/
 - Compatible wallets include Backpack, OKX Web3 Wallet, Nightly Wallet, and Bybit
 - Developers can take any code snippet from existing Solana code, change the RPC URL to Sonic, and redeploy their smart contracts
 - For client-side code, developers just need to change the RPC URL and can use any of the standard Solana libraries
 - Users can check their Sonic wallet balance by using the /balance command or by simply sending their wallet address
+- Users can request test tokens from the Sega faucet using the /faucet command or by asking for tokens
 
 IMPORTANT FUNCTIONALITY:
 - This bot has built-in wallet balance checking capability
@@ -91,6 +102,9 @@ IMPORTANT FUNCTIONALITY:
 - Instead, the bot will automatically detect wallet addresses and check the balance for the user
 - If a user asks "can you check wallet balance of [address]", the bot will automatically check it
 - The bot uses RPC endpoints (https://rpc.mainnet-alpha.sonic.game/ and https://sonic.helius-rpc.com/) to fetch balances
+- This bot also has built-in faucet functionality to request test tokens from the Sega faucet
+- When a user asks for test tokens or to use the faucet, tell them to use the /faucet command with their wallet address
+- If a user asks "can you send me test tokens to [address]", tell them to use the /faucet command
 
 RPC URLs:
 - Mainnet: https://rpc.mainnet-alpha.sonic.game
@@ -153,12 +167,15 @@ I can tell you about:
 • HyperGrid - Solana's first concurrent scaling framework
 • Sorada - lightning-fast data architecture (5ms reads!)
 • Rush - composable gaming primitives on-chain
+• Sega - the leading DEX and liquidity protocol on Sonic (https://sega.so/)
 
 Need help with:
 • Bridging funds (via bridge.sonic.game)
 • Deploying programs on Sonic
 • Finding resources like Explorer or Faucet
 • Checking your wallet balance (use /balance <address> or just send your wallet address)
+• DeFi activities like swaps and liquidity provision
+• Getting test tokens (use /faucet <address>)
 
 What can I speed up for you today?
 `;
@@ -174,8 +191,16 @@ Here are some commands you can use:
 /help - Show this help message
 /reset - Reset the conversation history
 /balance <wallet_address> - Check the balance of a Sonic wallet
+/faucet <wallet_address> - Request test tokens from the Sega faucet
 
-You can also just send me a message, and I'll do my best to help you!
+You can also ask me about:
+- Sonic's technologies (HyperGrid, Sorada, Rush)
+- Ecosystem projects like Sega DEX (https://sega.so/)
+- How to bridge funds to Sonic
+- How to deploy programs on Sonic
+- DeFi activities like swaps and providing liquidity
+
+Just send me a message, and I'll do my best to help you!
   `);
 });
 
@@ -215,6 +240,43 @@ bot.command('balance', async (ctx) => {
   } catch (error) {
     console.error('Error fetching wallet balance:', error);
     await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
+  }
+});
+
+// Faucet command
+bot.command('faucet', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    return ctx.reply('Please provide a wallet address. Usage: /faucet <wallet_address>');
+  }
+
+  const address = args[1].trim();
+  
+  // Validate wallet address
+  if (!isValidSonicAddress(address)) {
+    return ctx.reply('Invalid wallet address format. Please provide a valid Sonic wallet address.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Request tokens from the faucet
+    const faucetResponse = await requestFaucetTokens(address);
+    
+    // Format and send the response
+    let formattedResponse = '';
+    if (faucetResponse.success) {
+      formattedResponse = `Success! 🎉 Tokens have been sent to your wallet: ${address.slice(0, 6)}...${address.slice(-4)}`;
+    } else {
+      // Use the message directly without "Error:" prefix
+      formattedResponse = faucetResponse.message || faucetResponse.error || 'Unknown error occurred';
+    }
+    
+    await ctx.reply(formattedResponse);
+  } catch (error) {
+    console.error('Error requesting faucet tokens:', error);
+    await ctx.reply('Sorry, there was an error connecting to the faucet service. Please try again later.');
   }
 });
 
