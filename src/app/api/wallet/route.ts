@@ -10,7 +10,11 @@ export async function POST(req: NextRequest) {
     // Validate input
     if (!address || typeof address !== 'string') {
       return NextResponse.json(
-        { error: 'Invalid request: wallet address is required' },
+        { 
+          sol: 0,
+          tokens: [],
+          error: 'Invalid request: wallet address is required' 
+        },
         { status: 400 }
       );
     }
@@ -18,7 +22,11 @@ export async function POST(req: NextRequest) {
     // Validate wallet address
     if (!isValidSonicAddress(address)) {
       return NextResponse.json(
-        { error: 'Invalid wallet address format' },
+        { 
+          sol: 0,
+          tokens: [],
+          error: 'Invalid wallet address format' 
+        },
         { status: 400 }
       );
     }
@@ -30,8 +38,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(balance);
   } catch (error) {
     console.error('Error in wallet API route:', error);
+    
+    // Return a structured error response that matches the expected format
     return NextResponse.json(
-      { error: 'An error occurred while processing your request' },
+      { 
+        sol: 0,
+        tokens: [],
+        error: 'An error occurred while processing your request' 
+      },
       { status: 500 }
     );
   }

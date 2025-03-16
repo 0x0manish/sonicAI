@@ -5,7 +5,8 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from '../lib/wallet-utils';
-import { requestFaucetTokens, formatFaucetResponse } from '../lib/faucet-utils';
+import { requestFaucetTokens } from '../lib/faucet-utils';
+import { getTokenPrices, formatTokenPrices, isValidTokenMint } from '../lib/token-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -95,6 +96,7 @@ Practical Knowledge:
 - For client-side code, developers just need to change the RPC URL and can use any of the standard Solana libraries
 - Users can check their Sonic wallet balance by using the /balance command or by simply sending their wallet address
 - Users can request test tokens from the Sega faucet using the /faucet command or by asking for tokens
+- Users can check token prices on Sonic by using the /price command or by simply sending a token mint address
 
 IMPORTANT FUNCTIONALITY:
 - This bot has built-in wallet balance checking capability
@@ -174,6 +176,7 @@ Need help with:
 • Deploying programs on Sonic
 • Finding resources like Explorer or Faucet
 • Checking your wallet balance (use /balance <address> or just send your wallet address)
+• Checking token prices (use /price <mint_address> or just send a token mint address)
 • DeFi activities like swaps and liquidity provision
 • Getting test tokens (use /faucet <address>)
 
@@ -191,6 +194,7 @@ Here are some commands you can use:
 /help - Show this help message
 /reset - Reset the conversation history
 /balance <wallet_address> - Check the balance of a Sonic wallet
+/price <token_mint_address> - Check the price of a token on Sonic
 /faucet <wallet_address> - Request test tokens from the Sega faucet
 
 You can also ask me about:
@@ -199,6 +203,7 @@ You can also ask me about:
 - How to bridge funds to Sonic
 - How to deploy programs on Sonic
 - DeFi activities like swaps and providing liquidity
+- Token prices (just send a token mint address or ask "what's the price of token <mint_address>")
 
 Just send me a message, and I'll do my best to help you!
   `);
@@ -280,6 +285,36 @@ bot.command('faucet', async (ctx) => {
   }
 });
 
+// Price command
+bot.command('price', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    return ctx.reply('Please provide a token mint address. Usage: /price <token_mint_address>');
+  }
+
+  const mint = args[1].trim();
+  
+  // Validate token mint address
+  if (!isValidTokenMint(mint)) {
+    return ctx.reply('Invalid token mint address format. Please provide a valid token mint address.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get token price
+    const priceResponse = await getTokenPrices([mint]);
+    
+    // Format and send the price
+    const formattedPrice = formatTokenPrices(priceResponse, [mint]);
+    await ctx.reply(formattedPrice);
+  } catch (error) {
+    console.error('Error fetching token price:', error);
+    await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
+  }
+});
+
 // Handle text messages
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from?.id;
@@ -304,12 +339,31 @@ bot.on(message('text'), async (ctx) => {
       // Format and send the balance
       const formattedBalance = formatWalletBalance(balance);
       await ctx.reply(`Wallet: ${userMessage.slice(0, 6)}...${userMessage.slice(-4)}\n\n${formattedBalance}`);
-      
-      // Don't process this as a regular message
       return;
     } catch (error) {
       console.error('Error fetching wallet balance:', error);
-      // Continue processing as a regular message if there's an error
+      await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
+      return;
+    }
+  }
+  
+  // Check if the message is a token mint address (direct address)
+  if (isValidTokenMint(userMessage)) {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get token price
+      const priceResponse = await getTokenPrices([userMessage]);
+      
+      // Format and send the price
+      const formattedPrice = formatTokenPrices(priceResponse, [userMessage]);
+      await ctx.reply(formattedPrice);
+      return;
+    } catch (error) {
+      console.error('Error fetching token price:', error);
+      await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
+      return;
     }
   }
   
@@ -332,12 +386,39 @@ bot.on(message('text'), async (ctx) => {
         // Format and send the balance
         const formattedBalance = formatWalletBalance(balance);
         await ctx.reply(`Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\n${formattedBalance}`);
-        
-        // Don't process this as a regular message
         return;
       } catch (error) {
         console.error('Error fetching wallet balance:', error);
-        // Continue processing as a regular message if there's an error
+        await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
+        return;
+      }
+    }
+  }
+  
+  // Check if the message is asking for token price
+  const tokenPriceRegex = /(?:price|cost|value|worth|how much).*(?:token|mint|coin).*?([\w\d]{32,44})/i;
+  const tokenPriceMatch = userMessage.match(tokenPriceRegex);
+  
+  if (tokenPriceMatch && tokenPriceMatch[1]) {
+    const mint = tokenPriceMatch[1].trim();
+    
+    // Validate token mint address
+    if (isValidTokenMint(mint)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Get token price
+        const priceResponse = await getTokenPrices([mint]);
+        
+        // Format and send the price
+        const formattedPrice = formatTokenPrices(priceResponse, [mint]);
+        await ctx.reply(formattedPrice);
+        return;
+      } catch (error) {
+        console.error('Error fetching token price:', error);
+        await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
+        return;
       }
     }
   }

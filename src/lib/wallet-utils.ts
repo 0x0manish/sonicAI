@@ -82,74 +82,119 @@ export function isValidSonicAddress(address: string): boolean {
  * @returns A promise that resolves to the wallet balance information
  */
 async function fetchWalletBalance(address: string, rpcUrl: string): Promise<WalletBalance> {
-  // Get SOL balance
-  const solBalanceResponse = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getBalance',
-      params: [address],
-    }),
-  });
+  try {
+    // Get SOL balance
+    const solBalanceResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getBalance',
+        params: [address],
+      }),
+    });
 
-  const solBalanceData = await solBalanceResponse.json() as RPCResponse<SolBalanceResult>;
-  const solBalance = (solBalanceData.result && solBalanceData.result.value !== undefined) 
-    ? solBalanceData.result.value / 1_000_000_000 
-    : 0; // Convert lamports to SOL
-
-  // Get token accounts
-  const tokenAccountsResponse = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getTokenAccountsByOwner',
-      params: [
-        address,
-        {
-          programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', // Token program ID
-        },
-        {
-          encoding: 'jsonParsed',
-        },
-      ],
-    }),
-  });
-
-  const tokenAccountsData = await tokenAccountsResponse.json() as RPCResponse<{ value: TokenAccountData[] }>;
-  const tokenAccounts = tokenAccountsData.result?.value || [];
-
-  // Process token accounts to get balances
-  const tokens: TokenBalance[] = [];
-  for (const account of tokenAccounts) {
-    const parsedInfo = account.account.data.parsed.info;
-    const tokenBalance = parsedInfo.tokenAmount;
+    const solBalanceData = await solBalanceResponse.json() as RPCResponse<SolBalanceResult>;
     
-    if (tokenBalance.uiAmount > 0) {
-      // Get token metadata (optional, can be expanded)
-      const tokenInfo = {
-        mint: parsedInfo.mint,
-        symbol: '', // We would need to fetch this from a token list or metadata service
-        amount: Number(tokenBalance.amount),
-        decimals: tokenBalance.decimals,
-        uiAmount: tokenBalance.uiAmount,
+    // Check for RPC errors
+    if (solBalanceData.error) {
+      console.error('RPC Error in getBalance:', solBalanceData.error);
+      return {
+        sol: 0,
+        tokens: [],
+        error: `RPC Error: ${solBalanceData.error.message}`
       };
-      
-      tokens.push(tokenInfo);
     }
-  }
+    
+    const solBalance = (solBalanceData.result && solBalanceData.result.value !== undefined) 
+      ? solBalanceData.result.value / 1_000_000_000 
+      : 0; // Convert lamports to SOL
 
-  return {
-    sol: solBalance,
-    tokens,
-  };
+    try {
+      // Get token accounts
+      const tokenAccountsResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getTokenAccountsByOwner',
+          params: [
+            address,
+            {
+              programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', // Token program ID
+            },
+            {
+              encoding: 'jsonParsed',
+            },
+          ],
+        }),
+      });
+
+      const tokenAccountsData = await tokenAccountsResponse.json() as RPCResponse<{ value: TokenAccountData[] }>;
+      
+      // Check for RPC errors
+      if (tokenAccountsData.error) {
+        console.error('RPC Error in getTokenAccountsByOwner:', tokenAccountsData.error);
+        // If there's an error with token accounts, still return the SOL balance
+        return {
+          sol: solBalance,
+          tokens: [],
+        };
+      }
+      
+      const tokenAccounts = tokenAccountsData.result?.value || [];
+
+      // Process token accounts to get balances
+      const tokens: TokenBalance[] = [];
+      for (const account of tokenAccounts) {
+        try {
+          const parsedInfo = account.account.data.parsed.info;
+          const tokenBalance = parsedInfo.tokenAmount;
+          
+          if (tokenBalance.uiAmount > 0) {
+            // Get token metadata (optional, can be expanded)
+            const tokenInfo = {
+              mint: parsedInfo.mint,
+              symbol: '', // We would need to fetch this from a token list or metadata service
+              amount: Number(tokenBalance.amount),
+              decimals: tokenBalance.decimals,
+              uiAmount: tokenBalance.uiAmount,
+            };
+            
+            tokens.push(tokenInfo);
+          }
+        } catch (tokenError) {
+          console.error('Error processing token account:', tokenError);
+          // Continue with other token accounts
+        }
+      }
+
+      return {
+        sol: solBalance,
+        tokens,
+      };
+    } catch (tokenError) {
+      console.error('Error fetching token accounts:', tokenError);
+      // Return just the SOL balance if token fetching fails
+      return {
+        sol: solBalance,
+        tokens: [],
+      };
+    }
+  } catch (error) {
+    console.error('Error in fetchWalletBalance:', error);
+    return {
+      sol: 0,
+      tokens: [],
+      error: 'Failed to fetch wallet balance'
+    };
+  }
 }
 
 /**
@@ -184,7 +229,11 @@ export async function getSonicWalletBalance(address: string): Promise<WalletBala
         return await fetchWalletBalance(address, fallbackRpcUrl);
       } catch (fallbackError) {
         console.error('Error fetching wallet balance from fallback RPC:', fallbackError);
-        throw new Error('Failed to fetch wallet balance from both primary and fallback RPC endpoints');
+        return {
+          sol: 0,
+          tokens: [],
+          error: 'Failed to fetch wallet balance from both primary and fallback RPC endpoints'
+        };
       }
     }
   } catch (error) {

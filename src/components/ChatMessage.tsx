@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Message } from '@/lib/ai-utils';
 import { UserIcon } from '@heroicons/react/24/solid';
 import ReactMarkdown from 'react-markdown';
@@ -10,6 +10,121 @@ import rehypeSanitize from 'rehype-sanitize';
 
 interface ChatMessageProps {
   message: Message;
+}
+
+// Simple error handling component for markdown rendering
+function SafeMarkdown({ children }: { children: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  // Use effect to catch errors during rendering
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      // Only handle errors from this component
+      if (event.message && event.message.includes('markdown')) {
+        console.error('Markdown rendering error:', event);
+        setHasError(true);
+        // Prevent the error from bubbling up
+        event.preventDefault();
+      }
+    };
+
+    // Add error event listener
+    window.addEventListener('error', handleError);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('error', handleError);
+    };
+  }, []);
+
+  if (hasError) {
+    // Fallback UI when markdown rendering fails
+    return (
+      <div className="text-gray-800 dark:text-gray-200">
+        {children}
+      </div>
+    );
+  }
+
+  // Try to render markdown, fallback to plain text if it fails
+  try {
+    return (
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]} 
+        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+        components={{
+          // Customize code blocks
+          code: ({ node, inline, className, children, ...props }: any) => {
+            const match = /language-(\w+)/.exec(className || '');
+            return !inline ? (
+              <pre className="bg-gray-800 dark:bg-gray-900 rounded-md p-3 overflow-x-auto">
+                <code
+                  className={match ? `language-${match[1]}` : ''}
+                  {...props}
+                >
+                  {children}
+                </code>
+              </pre>
+            ) : (
+              <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
+                {children}
+              </code>
+            );
+          },
+          // Customize links to open in new tab and handle errors
+          a: ({ node, children, href, ...props }: any) => {
+            try {
+              return (
+                <a 
+                  href={href} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                  {...props}
+                >
+                  {children}
+                </a>
+              );
+            } catch (error) {
+              console.error('Error rendering link:', error);
+              return <span>{children}</span>;
+            }
+          },
+          // Customize tables
+          table: ({ node, children, ...props }: any) => {
+            return (
+              <div className="overflow-x-auto">
+                <table className="border-collapse border border-gray-300 dark:border-gray-700" {...props}>
+                  {children}
+                </table>
+              </div>
+            );
+          },
+          // Style table headers
+          th: ({ node, children, ...props }: any) => {
+            return (
+              <th className="border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-4 py-2 text-left" {...props}>
+                {children}
+              </th>
+            );
+          },
+          // Style table cells
+          td: ({ node, children, ...props }: any) => {
+            return (
+              <td className="border border-gray-300 dark:border-gray-700 px-4 py-2" {...props}>
+                {children}
+              </td>
+            );
+          }
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    );
+  } catch (error) {
+    console.error('Error rendering markdown:', error);
+    return <div className="text-gray-800 dark:text-gray-200">{children}</div>;
+  }
 }
 
 export default function ChatMessage({ message }: ChatMessageProps) {
@@ -41,72 +156,9 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             </div>
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none markdown-content">
-              <ReactMarkdown 
-                remarkPlugins={[remarkGfm]} 
-                rehypePlugins={[rehypeRaw, rehypeSanitize]}
-                components={{
-                  // Customize code blocks
-                  code: ({ node, inline, className, children, ...props }: any) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    return !inline ? (
-                      <pre className="bg-gray-800 dark:bg-gray-900 rounded-md p-3 overflow-x-auto">
-                        <code
-                          className={match ? `language-${match[1]}` : ''}
-                          {...props}
-                        >
-                          {children}
-                        </code>
-                      </pre>
-                    ) : (
-                      <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                  // Customize links to open in new tab
-                  a: ({ node, children, href, ...props }: any) => {
-                    return (
-                      <a 
-                        href={href} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-indigo-600 dark:text-indigo-400 hover:underline"
-                        {...props}
-                      >
-                        {children}
-                      </a>
-                    );
-                  },
-                  // Customize tables
-                  table: ({ node, children, ...props }: any) => {
-                    return (
-                      <div className="overflow-x-auto">
-                        <table className="border-collapse border border-gray-300 dark:border-gray-700" {...props}>
-                          {children}
-                        </table>
-                      </div>
-                    );
-                  },
-                  // Style table headers
-                  th: ({ node, children, ...props }: any) => {
-                    return (
-                      <th className="border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-4 py-2 text-left" {...props}>
-                        {children}
-                      </th>
-                    );
-                  },
-                  // Style table cells
-                  td: ({ node, children, ...props }: any) => {
-                    return (
-                      <td className="border border-gray-300 dark:border-gray-700 px-4 py-2" {...props}>
-                        {children}
-                      </td>
-                    );
-                  }
-                }}
-              >
+              <SafeMarkdown>
                 {message.content}
-              </ReactMarkdown>
+              </SafeMarkdown>
             </div>
           )}
         </div>
