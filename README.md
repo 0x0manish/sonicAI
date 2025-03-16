@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sonic AI Agent
+
+Sonic AI is an intelligent assistant specialized in Solana blockchain and Sonic SVM (Solana Virtual Machine) technology. This project provides both a web interface and a Telegram bot for interacting with the Sonic AI agent.
+
+## About Sonic
+
+Sonic is the first atomic SVM (Solana Virtual Machine) chain engineered to accelerate and enhance the Solana Virtual Machine. It addresses challenges in blockchain performance by enabling high-throughput applications while maintaining decentralization. As an atomic SVM chain, Sonic allows applications to operate with their own computational resources while staying connected to Solana's security.
+
+### Key Technologies
+
+1. **HyperGrid Framework**: A scalable architecture that enables parallel processing of transactions, allowing thousands of concurrent operations without competing for the same blockchain resources.
+2. **Sorada**: A fundamental shift in SVM data architecture that decouples read operations from transaction processing, delivering 30-40x improvement in read performance (as low as 5ms).
+3. **Rush**: An Entity-Component-System (ECS) framework for blockchain development that takes a declarative approach, generating smart contracts and SDKs from simple configuration files.
+
+## Features
+
+- Modern ChatGPT-like web interface
+- Speech-to-text input capability
+- Telegram bot integration
+- Powered by OpenAI's GPT-4o-mini model
+- Responsive design for all devices
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
+- Node.js (v18 or higher)
+- npm or yarn
+- OpenAI API key
+- Telegram Bot Token (for bot functionality)
+
+### Installation
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/sonic-agent.git
+   cd sonic-agent
+   ```
+
+2. Install dependencies:
+   ```
+   npm install
+   ```
+
+3. Create a `.env.local` file in the root directory with the following variables:
+   ```
+   OPENAI_API_KEY=your_openai_api_key_here
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+   AI_PROVIDER=openai
+   AI_MODEL=gpt-4o-mini
+   ```
+
+### Running the Web Interface
+
+```
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The web interface will be available at http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Running the Telegram Bot
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+npm run bot
+```
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+The project is built with:
+- Next.js for the web interface
+- Telegraf for the Telegram bot
+- OpenAI API for AI capabilities
+- TailwindCSS for styling
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Deploy on Vercel
+## Acknowledgments
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Solana Foundation
+- OpenAI
+- Vercel
