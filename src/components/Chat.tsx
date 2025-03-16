@@ -4,12 +4,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import { Message } from '@/lib/ai-utils';
+import { isValidSonicAddress } from '@/lib/wallet-utils';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hey there! I'm Sonic AI, your go-to expert on Sonic and SVM tech. 🚀 I can help with HyperGrid, Sorada, Rush, or deploying on Sonic. What can I speed up for you today?"
+      content: "Hi! I'm Sonic AI. How can I help you with Sonic or SVM technology today? 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +39,26 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Check if the message is a wallet address (direct address)
+      if (isValidSonicAddress(content)) {
+        await checkWalletBalance(content);
+        return;
+      }
+
+      // Check if the message is asking to check a wallet balance
+      const walletCheckRegex = /(?:check|view|show|get|what(?:'|')?s|what is).*(?:wallet|balance|account).*?([\w\d]{32,44})/i;
+      const walletMatch = content.match(walletCheckRegex);
+      
+      if (walletMatch && walletMatch[1]) {
+        const address = walletMatch[1].trim();
+        
+        // Validate wallet address
+        if (isValidSonicAddress(address)) {
+          await checkWalletBalance(address);
+          return;
+        }
+      }
+
       // Prepare messages for API
       const chatMessages = [...messages, userMessage];
       
@@ -91,6 +112,59 @@ export default function Chat() {
         },
       ]);
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to check wallet balance
+  const checkWalletBalance = async (address: string) => {
+    try {
+      // Call the wallet API
+      const response = await fetch('/api/wallet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ address }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get wallet balance: ${response.status} ${response.statusText}`);
+      }
+
+      const walletData = await response.json();
+      
+      // Format the response
+      let responseContent = '';
+      if (walletData.error) {
+        responseContent = `Error: ${walletData.error}`;
+      } else {
+        responseContent = `**Wallet Balance for ${address.slice(0, 6)}...${address.slice(-4)}**\n\n`;
+        responseContent += `SOL Balance: **${walletData.sol.toFixed(4)} SOL**\n\n`;
+        
+        if (walletData.tokens && walletData.tokens.length > 0) {
+          responseContent += 'Token Balances:\n';
+          walletData.tokens.forEach((token: any) => {
+            const symbol = token.symbol || 'Unknown Token';
+            responseContent += `- **${symbol}**: ${token.uiAmount.toFixed(4)} (${token.mint.slice(0, 4)}...${token.mint.slice(-4)})\n`;
+          });
+        } else {
+          responseContent += 'No token balances found.';
+        }
+      }
+
+      // Add the response to the chat
+      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error checking wallet balance:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, there was an error checking the wallet balance. Please try again.',
+        },
+      ]);
       setIsLoading(false);
     }
   };

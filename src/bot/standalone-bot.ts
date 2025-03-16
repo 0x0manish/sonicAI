@@ -4,6 +4,7 @@ import { OpenAI } from 'openai';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from '../lib/wallet-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -82,6 +83,14 @@ Practical Knowledge:
 - Compatible wallets include Backpack, OKX Web3 Wallet, Nightly Wallet, and Bybit
 - Developers can take any code snippet from existing Solana code, change the RPC URL to Sonic, and redeploy their smart contracts
 - For client-side code, developers just need to change the RPC URL and can use any of the standard Solana libraries
+- Users can check their Sonic wallet balance by using the /balance command or by simply sending their wallet address
+
+IMPORTANT FUNCTIONALITY:
+- This bot has built-in wallet balance checking capability
+- When a user asks to check a wallet balance or sends a wallet address, DO NOT tell them to use an explorer
+- Instead, the bot will automatically detect wallet addresses and check the balance for the user
+- If a user asks "can you check wallet balance of [address]", the bot will automatically check it
+- The bot uses RPC endpoints (https://rpc.mainnet-alpha.sonic.game/ and https://sonic.helius-rpc.com/) to fetch balances
 
 RPC URLs:
 - Mainnet: https://rpc.mainnet-alpha.sonic.game
@@ -149,6 +158,7 @@ Need help with:
 • Bridging funds (via bridge.sonic.game)
 • Deploying programs on Sonic
 • Finding resources like Explorer or Faucet
+• Checking your wallet balance (use /balance <address> or just send your wallet address)
 
 What can I speed up for you today?
 `;
@@ -163,6 +173,7 @@ Here are some commands you can use:
 /start - Start a new conversation
 /help - Show this help message
 /reset - Reset the conversation history
+/balance <wallet_address> - Check the balance of a Sonic wallet
 
 You can also just send me a message, and I'll do my best to help you!
   `);
@@ -177,6 +188,36 @@ bot.command('reset', (ctx) => {
   ctx.reply('Conversation history has been reset. What would you like to talk about?');
 });
 
+// Balance command
+bot.command('balance', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    return ctx.reply('Please provide a wallet address. Usage: /balance <wallet_address>');
+  }
+
+  const address = args[1].trim();
+  
+  // Validate wallet address
+  if (!isValidSonicAddress(address)) {
+    return ctx.reply('Invalid wallet address format. Please provide a valid Sonic wallet address.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get wallet balance
+    const balance = await getSonicWalletBalance(address);
+    
+    // Format and send the balance
+    const formattedBalance = formatWalletBalance(balance);
+    await ctx.reply(`Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\n${formattedBalance}`);
+  } catch (error) {
+    console.error('Error fetching wallet balance:', error);
+    await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
+  }
+});
+
 // Handle text messages
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from?.id;
@@ -188,6 +229,56 @@ bot.on(message('text'), async (ctx) => {
   }
   
   const userMessage = ctx.message.text;
+  
+  // Check if the message is a wallet address (direct address)
+  if (isValidSonicAddress(userMessage)) {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get wallet balance
+      const balance = await getSonicWalletBalance(userMessage);
+      
+      // Format and send the balance
+      const formattedBalance = formatWalletBalance(balance);
+      await ctx.reply(`Wallet: ${userMessage.slice(0, 6)}...${userMessage.slice(-4)}\n\n${formattedBalance}`);
+      
+      // Don't process this as a regular message
+      return;
+    } catch (error) {
+      console.error('Error fetching wallet balance:', error);
+      // Continue processing as a regular message if there's an error
+    }
+  }
+  
+  // Check if the message is asking to check a wallet balance
+  const walletCheckRegex = /(?:check|view|show|get|what(?:'|')?s|what is).*(?:wallet|balance|account).*?([\w\d]{32,44})/i;
+  const walletMatch = userMessage.match(walletCheckRegex);
+  
+  if (walletMatch && walletMatch[1]) {
+    const address = walletMatch[1].trim();
+    
+    // Validate wallet address
+    if (isValidSonicAddress(address)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Get wallet balance
+        const balance = await getSonicWalletBalance(address);
+        
+        // Format and send the balance
+        const formattedBalance = formatWalletBalance(balance);
+        await ctx.reply(`Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\n${formattedBalance}`);
+        
+        // Don't process this as a regular message
+        return;
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        // Continue processing as a regular message if there's an error
+      }
+    }
+  }
   
   // Add user message to session
   userSessions[userId].messages.push({

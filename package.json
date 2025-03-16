@@ -14,6 +14,7 @@
     "@ai-sdk/react": "^1.1.23",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
+    "@solana/web3.js": "^1.98.0",
     "ai": "^4.1.61",
     "dotenv": "^16.4.7",
     "next": "15.2.2",
