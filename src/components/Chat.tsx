@@ -6,12 +6,13 @@ import ChatInput from './ChatInput';
 import { Message } from '@/lib/ai-utils';
 import { isValidSonicAddress } from '@/lib/wallet-utils';
 import { isValidTokenMint, formatTokenPrices } from '@/lib/token-utils';
+import { formatSonicStats } from '@/lib/stats-utils';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, DeFi activities, or request test tokens by typing 'faucet [your wallet address]'! 🚀"
+      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, or request test tokens by typing 'faucet [your wallet address]'! 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,6 +102,13 @@ export default function Chat() {
           await checkTokenPrice([mint]);
           return;
         }
+      }
+
+      // Check if the message is asking for Sonic chain stats
+      const statsRegex = /(?:stats|statistics|tvl|volume|locked value|total value|chain stats)/i;
+      if (statsRegex.test(content)) {
+        await checkSonicStats();
+        return;
       }
 
       // Check if the message is asking for test tokens (faucet request)
@@ -290,7 +298,7 @@ export default function Chat() {
       let responseContent = formatTokenPrices(priceData, mints);
       
       // Add markdown formatting for the web interface
-      responseContent = responseContent.replace(/\$(\d+\.\d+)/g, '**$$$1**');
+      responseContent = responseContent.replace(/\$([\d,]+)/g, '**$$$1**');
       
       if (mints.length === 1) {
         responseContent = `**Token Price Information**\n\n${responseContent}`;
@@ -314,6 +322,41 @@ export default function Chat() {
     }
   };
 
+  // Helper function to check Sonic chain stats
+  const checkSonicStats = async () => {
+    try {
+      // Call the stats API
+      const response = await fetch('/api/stats', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const statsData = await response.json();
+      
+      // Format the response
+      let responseContent = formatSonicStats(statsData);
+      
+      // No need to replace dollar signs as they're already in the correct format
+      // The stats are already formatted with $$ in the formatSonicStats function
+      
+      // Add the response to the chat
+      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error checking Sonic chain stats:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, there was an error fetching Sonic chain stats. The service might be temporarily unavailable. Please try again later.',
+        },
+      ]);
+      setIsLoading(false);
+    }
+  };
+
   // If there are no messages, show a welcome screen
   if (messages.length === 0) {
     return (
@@ -325,7 +368,7 @@ export default function Chat() {
               Your guide to the first atomic SVM chain for sovereign economies
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, or request test tokens.
+              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, or request test tokens.
             </p>
           </div>
         </div>

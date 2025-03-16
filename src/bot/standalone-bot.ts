@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from '../lib/wallet-utils';
 import { requestFaucetTokens } from '../lib/faucet-utils';
 import { getTokenPrices, formatTokenPrices, isValidTokenMint } from '../lib/token-utils';
+import { getSonicStats, formatSonicStats } from '../lib/stats-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -97,6 +98,7 @@ Practical Knowledge:
 - Users can check their Sonic wallet balance by using the /balance command or by simply sending their wallet address
 - Users can request test tokens from the Sega faucet using the /faucet command or by asking for tokens
 - Users can check token prices on Sonic by using the /price command or by simply sending a token mint address
+- Users can check Sonic chain TVL and 24-hour volume stats by using the /stats command or by asking about stats
 
 IMPORTANT FUNCTIONALITY:
 - This bot has built-in wallet balance checking capability
@@ -177,6 +179,7 @@ Need help with:
 • Finding resources like Explorer or Faucet
 • Checking your wallet balance (use /balance <address> or just send your wallet address)
 • Checking token prices (use /price <mint_address> or just send a token mint address)
+• Checking Sonic chain stats (use /stats or ask about TVL/volume)
 • DeFi activities like swaps and liquidity provision
 • Getting test tokens (use /faucet <address>)
 
@@ -195,6 +198,7 @@ Here are some commands you can use:
 /reset - Reset the conversation history
 /balance <wallet_address> - Check the balance of a Sonic wallet
 /price <token_mint_address> - Check the price of a token on Sonic
+/stats - Check Sonic chain TVL and 24-hour volume
 /faucet <wallet_address> - Request test tokens from the Sega faucet
 
 You can also ask me about:
@@ -204,6 +208,7 @@ You can also ask me about:
 - How to deploy programs on Sonic
 - DeFi activities like swaps and providing liquidity
 - Token prices (just send a token mint address or ask "what's the price of token <mint_address>")
+- Sonic chain stats (just ask about TVL or volume)
 
 Just send me a message, and I'll do my best to help you!
   `);
@@ -315,6 +320,24 @@ bot.command('price', async (ctx) => {
   }
 });
 
+// Stats command
+bot.command('stats', async (ctx) => {
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get Sonic chain stats
+    const stats = await getSonicStats();
+    
+    // Format and send the stats
+    const formattedStats = formatSonicStats(stats);
+    await ctx.reply(formattedStats);
+  } catch (error) {
+    console.error('Error fetching Sonic chain stats:', error);
+    await ctx.reply('Sorry, there was an error fetching Sonic chain stats. Please try again later.');
+  }
+});
+
 // Handle text messages
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from?.id;
@@ -420,6 +443,27 @@ bot.on(message('text'), async (ctx) => {
         await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
         return;
       }
+    }
+  }
+  
+  // Check if the message is asking for Sonic chain stats
+  const statsRegex = /(?:stats|statistics|tvl|volume|locked value|total value|chain stats)/i;
+  if (statsRegex.test(userMessage)) {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get Sonic chain stats
+      const stats = await getSonicStats();
+      
+      // Format and send the stats
+      const formattedStats = formatSonicStats(stats);
+      await ctx.reply(formattedStats);
+      return;
+    } catch (error) {
+      console.error('Error fetching Sonic chain stats:', error);
+      await ctx.reply('Sorry, there was an error fetching Sonic chain stats. Please try again later.');
+      return;
     }
   }
   
