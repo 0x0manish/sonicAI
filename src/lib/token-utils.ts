@@ -49,8 +49,14 @@ export interface TokenDetails {
  */
 export function isValidTokenMint(mint: string): boolean {
   // Basic validation - check if it's a base58 string of the right length
+  // Updated regex to include 'L' which is part of the base58 alphabet
   const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-  return base58Regex.test(mint);
+  
+  // Log the validation result for debugging
+  const isValid = base58Regex.test(mint);
+  console.log(`Validating token mint: ${mint}, isValid: ${isValid}`);
+  
+  return isValid;
 }
 
 /**
@@ -80,39 +86,56 @@ export async function getTokenPrices(mints: string[]): Promise<TokenPriceRespons
       };
     }
 
-    // Build the query string
-    const mintsParam = validMints.join(',');
-    
-    // Call the Sega API
-    const response = await fetch(`https://api.sega.so/api/mint/price?mints=${mintsParam}`, {
-      method: 'GET',
-      headers: {
-        'accept': 'application/json',
-      },
-    });
+    // Process each mint address individually using the new API endpoint
+    const prices: Record<string, number> = {};
+    let hasError = false;
+    let errorMessage = '';
 
-    // Parse the response
-    const data = await response.json() as TokenPriceApiResponse;
-    
-    // Check for API success
-    if (!data.success) {
-      return {
-        success: false,
-        prices: {},
-        error: 'Failed to fetch token prices from the API'
+    // Define the expected API response type
+    interface SegaTokenPriceResponse {
+      success: boolean;
+      data?: {
+        priceInUSD: number;
       };
+      error?: string;
     }
 
-    // Process the price data
-    const prices: Record<string, number> = {};
-    
-    // Check if we have any price data
-    if (data.data && Object.keys(data.data).length > 0) {
-      // Convert string prices to numbers
-      for (const [mint, priceStr] of Object.entries(data.data)) {
-        prices[mint] = parseFloat(priceStr);
+    // Use Promise.all to fetch prices for all mints in parallel
+    await Promise.all(validMints.map(async (mint) => {
+      try {
+        console.log(`Fetching price for mint: ${mint}`);
+        // Call the Sega API with the new endpoint
+        const response = await fetch(`https://api.sega.so/sega/price?mint=${mint}`, {
+          method: 'GET',
+          headers: {
+            'accept': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          console.error(`Failed to fetch price for mint ${mint}: ${response.status} ${response.statusText}`);
+          return;
+        }
+
+        // Parse the response
+        const data = await response.json() as SegaTokenPriceResponse;
+        
+        // Check for API success
+        if (data.success && data.data && data.data.priceInUSD !== undefined) {
+          prices[mint] = data.data.priceInUSD;
+          console.log(`Price for mint ${mint}: $${data.data.priceInUSD}`);
+        } else {
+          console.error(`No price data found for mint ${mint}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching price for mint ${mint}:`, error);
+        hasError = true;
+        errorMessage = 'Failed to fetch some token prices. The service might be temporarily unavailable.';
       }
-      
+    }));
+
+    // Check if we have any price data
+    if (Object.keys(prices).length > 0) {
       return {
         success: true,
         prices
@@ -122,7 +145,7 @@ export async function getTokenPrices(mints: string[]): Promise<TokenPriceRespons
       return {
         success: false,
         prices: {},
-        error: 'No price data found for the provided token mint addresses'
+        error: hasError ? errorMessage : 'No price data found for the provided token mint addresses'
       };
     }
   } catch (error) {
@@ -137,47 +160,67 @@ export async function getTokenPrices(mints: string[]): Promise<TokenPriceRespons
 
 /**
  * Formats token price information into a readable string
- * @param response The token price response
- * @param mints The original mint addresses that were queried
- * @returns A formatted string representation of the token prices
+ * @param priceResponse The token price API response
+ * @param mintAddresses The mint addresses that were queried
+ * @returns A formatted string with token price information
  */
-export function formatTokenPrices(response: TokenPriceResponse, mints: string[]): string {
-  if (!response.success || Object.keys(response.prices).length === 0) {
-    if (mints.length === 1) {
-      return `I couldn't find price information for the token with mint address ${mints[0].slice(0, 6)}...${mints[0].slice(-4)}. Please verify that this is a valid token mint address on Sonic.`;
-    } else {
-      return `I couldn't find price information for the token mint addresses you provided. Please verify that these are valid token mint addresses on Sonic.`;
-    }
-  }
-
-  let result = '';
+export function formatTokenPrices(priceResponse: TokenPriceResponse, mintAddresses: string[]): string {
+  console.log('Formatting token prices:', priceResponse, 'for mints:', mintAddresses);
   
-  if (mints.length === 1) {
-    const mint = mints[0];
-    const price = response.prices[mint];
+  if (!priceResponse.success) {
+    return `I couldn't fetch the token prices. ${priceResponse.error || 'The service might be temporarily unavailable.'}`;
+  }
+  
+  // Check if we have price data
+  if (!priceResponse.prices || Object.keys(priceResponse.prices).length === 0) {
+    return `I couldn't find price information for the requested token(s).`;
+  }
+  
+  // Special handling for SONIC token
+  const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+  
+  // Format the response based on the number of tokens
+  if (mintAddresses.length === 1) {
+    const mintAddress = mintAddresses[0];
+    const price = priceResponse.prices[mintAddress];
     
-    if (price !== undefined) {
-      // Format price with 4 decimal places for consistency
-      result = `The current price of token ${mint.slice(0, 6)}...${mint.slice(-4)} is $${price.toFixed(4)}.`;
-    } else {
-      result = `I couldn't find price information for the token with mint address ${mint.slice(0, 6)}...${mint.slice(-4)}. Please verify that this is a valid token mint address on Sonic.`;
+    if (!price) {
+      return `I couldn't find price information for this token.`;
     }
+    
+    // Special handling for SONIC token
+    if (mintAddress === SONIC_MINT) {
+      return `The current price of SONIC is $${Number(price).toFixed(4)} USD.`;
+    }
+    
+    // For other tokens, use a generic format
+    return `The current price of this token is $${Number(price).toFixed(4)} USD.`;
   } else {
-    result = 'Current Token Prices:\n\n';
+    // Multiple tokens
+    let response = '';
+    let foundAny = false;
     
-    for (const mint of mints) {
-      const price = response.prices[mint];
-      
-      if (price !== undefined) {
-        // Format price with 4 decimal places for consistency
-        result += `- ${mint.slice(0, 6)}...${mint.slice(-4)}: $${price.toFixed(4)}\n`;
-      } else {
-        result += `- ${mint.slice(0, 6)}...${mint.slice(-4)}: Price not available\n`;
+    mintAddresses.forEach(mintAddress => {
+      const price = priceResponse.prices[mintAddress];
+      if (price) {
+        foundAny = true;
+        
+        // Special handling for SONIC token
+        if (mintAddress === SONIC_MINT) {
+          response += `SONIC: $${Number(price).toFixed(4)} USD\n`;
+        } else {
+          // For other tokens, use the shortened mint address
+          response += `${mintAddress.slice(0, 4)}...${mintAddress.slice(-4)}: $${Number(price).toFixed(4)} USD\n`;
+        }
       }
+    });
+    
+    if (!foundAny) {
+      return `I couldn't find price information for any of the requested tokens.`;
     }
+    
+    return response;
   }
-  
-  return result;
 }
 
 /**
@@ -200,80 +243,113 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
     
     // Make the request with additional headers
     console.log('Sending request to Sega API...');
-    const response = await fetch(urlWithTimestamp, {
-      method: 'GET',
-      headers: {
-        'accept': 'application/json',
-        'Origin': 'https://sega.so',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
-      }
-    });
-
-    console.log('API response status:', response.status);
-    console.log('API response headers:', Object.fromEntries(response.headers.entries()));
-
-    if (!response.ok) {
-      console.error(`Failed to fetch token details: ${response.status} ${response.statusText}`);
-      
-      // Try to get the response text for more information
-      try {
-        const responseText = await response.text();
-        console.error('Error response text:', responseText);
-      } catch (textError) {
-        console.error('Could not get response text:', textError);
-      }
-      
-      return {
-        id: '',
-        success: false,
-        data: [],
-        error: `Failed to fetch token details: ${response.status} ${response.statusText}`
-      };
-    }
-
-    // Get the response as text first
-    const responseText = await response.text();
-    console.log('Response text preview:', responseText.substring(0, 200) + '...');
-    console.log('Full response text length:', responseText.length);
     
-    // Check if the response is valid JSON
-    if (!responseText.trim() || !responseText.trim().startsWith('{')) {
-      console.error('Invalid JSON response:', responseText);
-      return {
-        id: '',
-        success: false,
-        data: [],
-        error: 'Invalid response format from API'
-      };
-    }
+    // Create an AbortController for the timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
     try {
-      const data = JSON.parse(responseText) as TokenDetailsResponse;
-      console.log('Parsed token data:', JSON.stringify(data, null, 2));
+      const response = await fetch(urlWithTimestamp, {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'Origin': 'https://sega.so',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
+        },
+        signal: controller.signal
+      });
       
-      // Validate the response data
-      if (!data || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
-        console.error('No token details found for mint:', mintAddress);
+      // Clear the timeout
+      clearTimeout(timeoutId);
+
+      console.log('API response status:', response.status);
+      console.log('API response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        console.error(`Failed to fetch token details: ${response.status} ${response.statusText}`);
+        
+        // Try to get the response text for more information
+        try {
+          const responseText = await response.text();
+          console.error('Error response text:', responseText);
+        } catch (textError) {
+          console.error('Could not get response text:', textError);
+        }
+        
         return {
           id: '',
           success: false,
           data: [],
-          error: `No token details found for mint address: ${mintAddress}`
+          error: `Failed to fetch token details: ${response.status} ${response.statusText}`
+        };
+      }
+
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Response text preview:', responseText.substring(0, 200) + '...');
+      console.log('Full response text length:', responseText.length);
+      
+      // Check if the response is valid JSON
+      if (!responseText.trim() || !responseText.trim().startsWith('{')) {
+        console.error('Invalid JSON response:', responseText);
+        return {
+          id: '',
+          success: false,
+          data: [],
+          error: 'Invalid response format from API'
         };
       }
       
-      console.log('Successfully fetched token details for mint:', mintAddress);
-      return data;
-    } catch (parseError) {
-      console.error('Error parsing JSON response:', parseError);
+      try {
+        const data = JSON.parse(responseText) as TokenDetailsResponse;
+        console.log('Parsed token data:', JSON.stringify(data, null, 2));
+        
+        // Validate the response data
+        if (!data || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
+          console.error('No token details found for mint:', mintAddress);
+          return {
+            id: '',
+            success: false,
+            data: [],
+            error: `No token details found for mint address: ${mintAddress}`
+          };
+        }
+        
+        console.log('Successfully fetched token details for mint:', mintAddress);
+        return data;
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError);
+        return {
+          id: '',
+          success: false,
+          data: [],
+          error: `Failed to parse token details: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`
+        };
+      }
+    } catch (fetchError) {
+      // Clear the timeout if there was an error
+      clearTimeout(timeoutId);
+      
+      // Check if this was an abort error (timeout)
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        console.error('Request timed out when fetching token details');
+        return {
+          id: '',
+          success: false,
+          data: [],
+          error: 'Request timed out when fetching token details. Please try again later.'
+        };
+      }
+      
+      console.error('Fetch error when getting token details:', fetchError);
       return {
         id: '',
         success: false,
         data: [],
-        error: `Failed to parse token details: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`
+        error: `Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown fetch error'}`
       };
     }
   } catch (error) {

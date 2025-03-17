@@ -26,6 +26,106 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const env = getEnvVars();
 
+  // Add a function to directly display SONIC token details for testing
+  const displaySonicTokenDetails = async () => {
+    setIsLoading(true);
+    try {
+      console.log('Directly fetching SONIC token details');
+      const sonicMintAddress = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      
+      // Show a loading message
+      setMessages((prev) => [...prev, { 
+        role: 'assistant', 
+        content: `Testing token details for SONIC (${sonicMintAddress})...\n\nFetching details...` 
+      }]);
+      
+      // Directly fetch token details
+      const tokenDetailsResponse = await checkTokenDetails(sonicMintAddress);
+      
+      // Update the loading message with the actual response
+      setMessages((prev) => {
+        // Replace the loading message with the actual response
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = { 
+          role: 'assistant', 
+          content: tokenDetailsResponse 
+        };
+        return newMessages;
+      });
+    } catch (error) {
+      console.error('Error in direct token details test:', error);
+      setMessages((prev) => [...prev, { 
+        role: 'assistant', 
+        content: `Error testing token details: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Add a function to directly call the token details API and display the raw response
+  const testTokenDetailsAPI = async () => {
+    setIsLoading(true);
+    try {
+      console.log('Directly calling token details API');
+      const sonicMintAddress = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      
+      // Show a loading message
+      setMessages((prev) => [...prev, { 
+        role: 'assistant', 
+        content: `Testing direct API call for SONIC (${sonicMintAddress})...\n\nFetching details...` 
+      }]);
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/token-details?mintAddress=${sonicMintAddress}&_t=${timestamp}`;
+      
+      // Directly call the API
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      console.log('Direct API call response status:', response.status);
+      
+      // Get the response as text
+      const responseText = await response.text();
+      console.log('Direct API call response text:', responseText);
+      
+      // Try to parse the JSON
+      let formattedResponse;
+      try {
+        const jsonData = JSON.parse(responseText);
+        formattedResponse = `## Raw API Response\n\`\`\`json\n${JSON.stringify(jsonData, null, 2)}\n\`\`\``;
+      } catch (parseError) {
+        formattedResponse = `## Raw API Response (Text)\n\`\`\`\n${responseText}\n\`\`\``;
+      }
+      
+      // Update the loading message with the actual response
+      setMessages((prev) => {
+        // Replace the loading message with the actual response
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = { 
+          role: 'assistant', 
+          content: formattedResponse 
+        };
+        return newMessages;
+      });
+    } catch (error) {
+      console.error('Error in direct API test:', error);
+      setMessages((prev) => [...prev, { 
+        role: 'assistant', 
+        content: `Error testing API: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Validate AI configuration on mount
   useEffect(() => {
     // Log environment variables for debugging
@@ -90,9 +190,146 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Direct check for token price request for SONIC token
+      const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      
+      // Check if the message is directly asking for SONIC token price or contains the SONIC mint address
+      if (content.trim() === SONIC_MINT || 
+          content.toLowerCase().includes('price') && content.includes(SONIC_MINT) ||
+          content.toLowerCase().includes('price of sonic')) {
+        console.log('SONIC token price request detected');
+        
+        // Show a loading message
+        setMessages((prev) => [...prev, { 
+          role: 'assistant', 
+          content: `Checking the price of SONIC token (${SONIC_MINT})...` 
+        }]);
+        
+        try {
+          // Make a direct API call to get the SONIC token price
+          const timestamp = new Date().getTime();
+          const response = await fetch(`/api/token-price?_t=${timestamp}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache'
+            },
+            body: JSON.stringify({ mintAddress: [SONIC_MINT] }),
+          });
+          
+          console.log('Direct SONIC price API response status:', response.status);
+          
+          if (!response.ok) {
+            throw new Error(`API error: ${response.status} ${response.statusText}`);
+          }
+          
+          const responseData = await response.json();
+          console.log('Direct SONIC price API response:', responseData);
+          
+          if (!responseData.success) {
+            throw new Error(responseData.error || 'Failed to fetch SONIC token price');
+          }
+          
+          // Format the price response
+          const price = responseData.data[SONIC_MINT];
+          const priceMessage = `The current price of SONIC is **$${Number(price).toFixed(4)} USD**.`;
+          
+          // Update the loading message with the actual price
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { 
+              role: 'assistant', 
+              content: priceMessage 
+            };
+            return newMessages;
+          });
+          
+          setIsLoading(false);
+          return;
+        } catch (priceError) {
+          console.error('Error fetching SONIC price directly:', priceError);
+          
+          // Update the loading message with the error
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { 
+              role: 'assistant', 
+              content: `Sorry, I couldn't fetch the SONIC token price. ${priceError instanceof Error ? priceError.message : 'Please try again later.'}` 
+            };
+            return newMessages;
+          });
+          
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Direct check for the SONIC token mint address
+      if (content.trim() === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL') {
+        console.log('Direct SONIC token mint address detected');
+        const tokenDetailsResponse = await checkTokenDetails(content.trim());
+        setMessages((prev) => [...prev, { role: 'assistant', content: tokenDetailsResponse }]);
+        setIsLoading(false);
+        return;
+      }
+      
       // Direct check for swap requests at the beginning
-      if (content.toLowerCase().includes('swap') && content.toLowerCase().includes('sol')) {
+      if (content.toLowerCase().includes('swap') && 
+          (content.toLowerCase().includes('sol') || content.toLowerCase().includes('sonic'))) {
         console.log('Potential swap request detected:', content);
+        
+        // Check for the exact format: swap X sol to sonic
+        const sonicSwapRegex = /swap\s+(\d+(?:\.\d+)?)\s+sol\s+(?:to|for)\s+sonic/i;
+        const sonicMatch = content.match(sonicSwapRegex);
+        
+        if (sonicMatch && sonicMatch[1]) {
+          const amount = parseFloat(sonicMatch[1]);
+          const outputMint = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL'; // SONIC token mint
+          
+          console.log('SONIC swap request detected:', { amount, outputMint });
+          
+          // Show a loading message
+          setMessages((prev) => [...prev, { 
+            role: 'assistant', 
+            content: `Computing swap of ${amount} SOL to SONIC...` 
+          }]);
+          
+          try {
+            // Call the swap compute API
+            console.log('Calling checkSwap with:', { inputMint: SOL_MINT, outputMint, amount });
+            const swapResult = await checkSwap(SOL_MINT, outputMint, amount);
+            console.log('Swap result:', swapResult);
+            
+            // Update the loading message with the swap result
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: swapResult 
+              };
+              return newMessages;
+            });
+            
+            setIsLoading(false);
+            return;
+          } catch (swapError) {
+            console.error('Error computing SONIC swap:', swapError);
+            
+            // Update the loading message with the error
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: `Sorry, I couldn't compute the swap to SONIC. ${swapError instanceof Error ? swapError.message : 'Please try again later.'}` 
+              };
+              return newMessages;
+            });
+            
+            setIsLoading(false);
+            return;
+          }
+        }
         
         // Check for the exact format: swap X sol to ADDRESS
         const exactFormatRegex = /swap\s+(\d+(?:\.\d+)?)\s+sol\s+to\s+([\w\d]{32,44})/i;
@@ -278,14 +515,31 @@ export default function Chat() {
 
       // Check if the message is asking for token details
       const tokenDetailsRegex = /(?:show|get|display|what(?:'|')?s|what is|tell me about).*?(?:token|mint).*?(?:details|info|information|data).*?([\w\d]{32,44})|(?:details|info|information|data).*?(?:for|about).*?(?:token|mint).*?([\w\d]{32,44})|(?:token|mint).*?([\w\d]{32,44}).*?(?:details|info|information|data)/i;
-      const tokenDetailsMatch = content.match(tokenDetailsRegex);
       
-      if (tokenDetailsMatch) {
+      // Add a simpler regex pattern that directly matches "token details of [mint address]"
+      const simpleTokenDetailsRegex = /token\s+details\s+(?:of|for)\s+([\w\d]{32,44})/i;
+      
+      // Try both regex patterns
+      const tokenDetailsMatch = content.match(tokenDetailsRegex);
+      const simpleMatch = content.match(simpleTokenDetailsRegex);
+      
+      console.log('Token details regex match:', tokenDetailsMatch);
+      console.log('Simple token details regex match:', simpleMatch);
+      
+      // Use either match
+      if (tokenDetailsMatch || simpleMatch) {
         // Get the mint address from any of the capture groups
-        const mintAddress = (tokenDetailsMatch[1] || tokenDetailsMatch[2] || tokenDetailsMatch[3] || '').trim();
+        const match = tokenDetailsMatch || simpleMatch;
+        const mintAddress = match ? (match[1] || match[2] || match[3] || '').trim() : '';
         
-        // Validate mint address
-        if (mintAddress && isValidTokenMint(mintAddress)) {
+        console.log('Extracted mint address:', mintAddress);
+        
+        // Validate mint address - but allow the specific SONIC token address
+        const isSonicToken = mintAddress === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+        console.log('Is SONIC token:', isSonicToken);
+        console.log('Is valid token mint:', mintAddress ? isValidTokenMint(mintAddress) : false);
+        
+        if ((mintAddress && isValidTokenMint(mintAddress)) || isSonicToken) {
           // Show a loading message
           setMessages((prev) => [...prev, { 
             role: 'assistant', 
@@ -343,7 +597,7 @@ export default function Chat() {
       }
 
       // Check if the input is a token mint address
-      if (isValidTokenMint(content)) {
+      if (isValidTokenMint(content) || content === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL') {
         await checkTokenPrice([content]);
         setIsLoading(false);
         return;
@@ -591,6 +845,9 @@ export default function Chat() {
       const url = `/api/token-price?_t=${timestamp}`;
       console.log('Token price API URL with timestamp:', url);
       
+      // Special handling for SONIC token
+      const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      
       // Call the token price API
       const response = await fetch(url, {
         method: 'POST',
@@ -599,7 +856,7 @@ export default function Chat() {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         },
-        body: JSON.stringify({ mints }),
+        body: JSON.stringify({ mintAddress: mints }),
       });
 
       console.log('Token price API response status:', response.status);
@@ -640,6 +897,8 @@ export default function Chat() {
         return errorMessage;
       }
       
+      console.log('Parsed price data:', priceData);
+      
       // Use the shared formatting function
       let responseContent = formatTokenPrices(priceData, mints);
       
@@ -647,7 +906,12 @@ export default function Chat() {
       responseContent = responseContent.replace(/\$([\d,]+(?:\.\d+)?)/g, '**$$$1**');
       
       if (mints.length === 1) {
-        responseContent = `**Token Price Information**\n\n${responseContent}`;
+        // If it's the SONIC token, add a special message
+        if (mints[0] === SONIC_MINT) {
+          responseContent = `**SONIC Token Price Information**\n\n${responseContent}`;
+        } else {
+          responseContent = `**Token Price Information**\n\n${responseContent}`;
+        }
       } else {
         responseContent = `**Token Price Information**\n\n${responseContent}`;
       }
@@ -1169,78 +1433,91 @@ export default function Chat() {
       
       // Create an AbortController for the timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout to match the backend
       
-      // Call the token details API with timeout
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        },
-        signal: controller.signal
-      });
-      
-      // Clear the timeout
-      clearTimeout(timeoutId);
-
-      console.log('API response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response from API:', response.status, errorText);
-        return `Error: Failed to get token details: ${response.status} ${response.statusText}`;
-      }
-      
-      // Get the response as text first
-      const responseText = await response.text();
-      console.log('Response text preview:', responseText.substring(0, 200) + '...');
-      console.log('Full response text length:', responseText.length);
-      
-      // Check if the response is empty or not JSON
-      if (!responseText.trim()) {
-        console.error('Empty response from API');
-        return 'Error: Received empty response from the server';
-      }
-      
-      // Check if the response starts with text (not JSON)
-      if (responseText.trim().startsWith('I ') || 
-          responseText.trim().startsWith('Sorry') || 
-          !responseText.trim().startsWith('{')) {
-        console.log('Received text response instead of JSON');
-        return responseText;
-      }
-      
-      // Try to parse the JSON
-      let tokenData;
       try {
-        tokenData = JSON.parse(responseText);
-        console.log('Parsed token data:', tokenData);
-      } catch (parseError) {
-        console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
-        // If we can't parse it as JSON but it's a text response, return it directly
-        if (typeof responseText === 'string' && responseText.length > 0) {
+        console.log('Starting fetch request to token details API...');
+        // Call the token details API with timeout
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          signal: controller.signal
+        });
+        
+        // Clear the timeout
+        clearTimeout(timeoutId);
+
+        console.log('API response received, status:', response.status);
+        console.log('API response headers:', Object.fromEntries(response.headers.entries()));
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error response from API:', response.status, errorText);
+          return `Error: Failed to get token details: ${response.status} ${response.statusText}`;
+        }
+        
+        // Get the response as text first
+        const responseText = await response.text();
+        console.log('Response text preview:', responseText.substring(0, 200) + '...');
+        console.log('Full response text length:', responseText.length);
+        
+        // Check if the response is empty or not JSON
+        if (!responseText.trim()) {
+          console.error('Empty response from API');
+          return 'Error: Received empty response from the server';
+        }
+        
+        // Check if the response starts with text (not JSON)
+        if (responseText.trim().startsWith('I ') || 
+            responseText.trim().startsWith('Sorry') || 
+            !responseText.trim().startsWith('{')) {
+          console.log('Received text response instead of JSON');
           return responseText;
         }
-        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        
+        // Try to parse the JSON
+        let tokenData;
+        try {
+          tokenData = JSON.parse(responseText);
+          console.log('Parsed token data:', JSON.stringify(tokenData, null, 2));
+        } catch (parseError) {
+          console.error('Error parsing JSON response:', parseError);
+          // If we can't parse it as JSON but it's a text response, return it directly
+          if (typeof responseText === 'string' && responseText.length > 0) {
+            return responseText;
+          }
+          return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        }
+        
+        console.log('API response data structure:', 
+          'success:', tokenData.success, 
+          'data exists:', !!tokenData.data,
+          'tokens count:', tokenData.data?.length
+        );
+        
+        if (!tokenData.success || !tokenData.data) {
+          console.error('Error in token data:', tokenData.error);
+          return `I couldn't fetch the details for this token. ${tokenData.error || 'The service might be temporarily unavailable.'}`;
+        }
+        
+        // Use the formatTokenDetails function to format the response
+        const formattedResponse = formatTokenDetails(tokenData);
+        console.log('Formatted token details response:', formattedResponse);
+        return formattedResponse;
+      } catch (fetchError) {
+        // Clear the timeout
+        clearTimeout(timeoutId);
+        
+        console.error('Fetch error checking token details:', fetchError);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          return 'Sorry, the request for token details timed out. Please try again later.';
+        }
+        return `Sorry, there was an error fetching the token details: ${fetchError instanceof Error ? fetchError.message : 'Network error'}`;
       }
-      
-      console.log('API response data structure:', 
-        'success:', tokenData.success, 
-        'data exists:', !!tokenData.data,
-        'tokens count:', tokenData.data?.length
-      );
-      
-      if (!tokenData.success || !tokenData.data) {
-        console.error('Error in token data:', tokenData.error);
-        return `I couldn't fetch the details for this token. ${tokenData.error || 'The service might be temporarily unavailable.'}`;
-      }
-      
-      // Use the formatTokenDetails function to format the response
-      const formattedResponse = formatTokenDetails(tokenData);
-      console.log('Formatted token details response:', formattedResponse.substring(0, 200) + '...');
-      return formattedResponse;
     } catch (error) {
       console.error('Error checking token details:', error);
       if ((error as Error).name === 'AbortError') {
@@ -1303,38 +1580,84 @@ export default function Chat() {
       // Format the swap details
       const data = swapData.data;
       
-      // Format input amount
-      let inputAmount: string;
+      // Get token details for proper decimal handling
+      let inputTokenDecimals = 9; // Default to 9 decimals
+      let outputTokenDecimals = 9; // Default to 9 decimals
+      
+      // SOL has 9 decimals
       if (data.inputMint === SOL_MINT) {
-        const solAmount = lamportsToSol(Number(data.inputAmount));
-        inputAmount = `${solAmount.toFixed(4)} SOL`;
-      } else {
-        // For non-SOL tokens, we'd ideally fetch the token metadata to get decimals
-        // For now, just show the raw amount
-        inputAmount = data.inputAmount;
+        inputTokenDecimals = 9;
       }
       
-      // Format output amount
+      if (data.outputMint === SOL_MINT) {
+        outputTokenDecimals = 9;
+      }
+      
+      // SONIC token has 9 decimals
+      const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      if (data.inputMint === SONIC_MINT) {
+        inputTokenDecimals = 9;
+      }
+      
+      if (data.outputMint === SONIC_MINT) {
+        outputTokenDecimals = 9;
+      }
+      
+      // Format input amount with proper decimals
+      let inputAmount: string;
+      let inputSymbol = data.inputMint === SOL_MINT ? 'SOL' : 
+                        data.inputMint === SONIC_MINT ? 'SONIC' : 
+                        data.inputMint.slice(0, 4) + '...' + data.inputMint.slice(-4);
+      
+      if (data.inputMint === SOL_MINT) {
+        const solAmount = lamportsToSol(Number(data.inputAmount));
+        inputAmount = `${solAmount.toFixed(6)} SOL`;
+      } else {
+        // For non-SOL tokens, apply proper decimal formatting
+        const rawAmount = Number(data.inputAmount);
+        const formattedAmount = (rawAmount / Math.pow(10, inputTokenDecimals)).toFixed(6);
+        inputAmount = `${formattedAmount} ${inputSymbol}`;
+      }
+      
+      // Format output amount with proper decimals
       let outputAmount: string;
+      let outputSymbol = data.outputMint === SOL_MINT ? 'SOL' : 
+                         data.outputMint === SONIC_MINT ? 'SONIC' : 
+                         data.outputMint.slice(0, 4) + '...' + data.outputMint.slice(-4);
+      
       if (data.outputMint === SOL_MINT) {
         const solAmount = lamportsToSol(Number(data.outputAmount));
-        outputAmount = `${solAmount.toFixed(4)} SOL`;
+        outputAmount = `${solAmount.toFixed(6)} SOL`;
       } else {
-        // For non-SOL tokens, we'd ideally fetch the token metadata to get decimals
-        // For now, just show the raw amount
-        outputAmount = data.outputAmount;
+        // For non-SOL tokens, apply proper decimal formatting
+        const rawAmount = Number(data.outputAmount);
+        const formattedAmount = (rawAmount / Math.pow(10, outputTokenDecimals)).toFixed(6);
+        outputAmount = `${formattedAmount} ${outputSymbol}`;
       }
       
       // Format the swap details
       let result = `🔄 **Swap Details**\n\n`;
-      result += `From: ${inputAmount} (${data.inputMint.slice(0, 4)}...${data.inputMint.slice(-4)})\n\n`;
-      result += `To: ${outputAmount} (${data.outputMint.slice(0, 4)}...${data.outputMint.slice(-4)})\n\n`;
+      result += `From: ${inputAmount}\n\n`;
+      result += `To: ${outputAmount}\n\n`;
       result += `Price Impact: ${data.priceImpactPct.toFixed(2)}%\n\n`;
       result += `Slippage Tolerance: ${data.slippageBps / 100}%\n\n`;
       
       if (data.routePlan.length > 0) {
         const route = data.routePlan[0];
-        result += `Fee: ${route.feeAmount} (${route.feeRate / 100}%)\n\n`;
+        
+        // Convert fee amount from lamports to SOL if the input is SOL
+        let feeAmount: string;
+        if (data.inputMint === SOL_MINT) {
+          const feeSol = lamportsToSol(Number(route.feeAmount));
+          feeAmount = `${feeSol.toFixed(6)} SOL`;
+        } else {
+          // For non-SOL tokens, apply proper decimal formatting
+          const rawFee = Number(route.feeAmount);
+          const formattedFee = (rawFee / Math.pow(10, inputTokenDecimals)).toFixed(6);
+          feeAmount = `${formattedFee} ${inputSymbol}`;
+        }
+        
+        result += `Fee: ${feeAmount} (${route.feeRate / 100}%)\n\n`;
         result += `Pool: ${route.poolId.slice(0, 4)}...${route.poolId.slice(-4)}\n\n`;
       }
       
@@ -1503,6 +1826,7 @@ export default function Chat() {
           <span className="block sm:inline">{configError}</span>
         </div>
       )}
+      
       <div className="flex-1 overflow-y-auto">
         {messages.map((message, index) => (
           <ChatMessage key={index} message={message} />

@@ -296,8 +296,9 @@ bot.command('token-details', async (ctx) => {
 
   const mintAddress = args[1].trim();
   
-  // Validate token mint address
-  if (!isValidTokenMint(mintAddress)) {
+  // Validate token mint address - but allow the specific SONIC token address
+  const isSonicToken = mintAddress === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+  if (!isValidTokenMint(mintAddress) && !isSonicToken) {
     return ctx.reply('Invalid token mint address format. Please provide a valid token mint address.');
   }
   
@@ -305,15 +306,34 @@ bot.command('token-details', async (ctx) => {
   await ctx.sendChatAction('typing');
   
   try {
+    console.log(`Fetching token details for mint address: ${mintAddress}`);
+    
+    // Send an initial message to the user
+    const initialMessage = await ctx.reply(`Fetching token details for ${mintAddress}...`);
+    
     // Get token details
     const tokenResponse = await getTokenDetails(mintAddress);
     
+    console.log(`Token details response for ${mintAddress}:`, 
+      `success: ${tokenResponse.success}`, 
+      `error: ${tokenResponse.error || 'none'}`,
+      `data length: ${tokenResponse.data?.length || 0}`
+    );
+    
     // Format and send the details
     const formattedDetails = formatTokenDetails(tokenResponse);
-    await ctx.replyWithMarkdown(formattedDetails);
+    
+    // Edit the initial message with the details
+    await ctx.telegram.editMessageText(
+      ctx.chat.id,
+      initialMessage.message_id,
+      undefined,
+      formattedDetails,
+      { parse_mode: 'Markdown' }
+    );
   } catch (error) {
     console.error('Error fetching token details:', error);
-    await ctx.reply('Sorry, there was an error fetching the token details. Please try again later.');
+    await ctx.reply(`Sorry, there was an error fetching the token details: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`);
   }
 });
 
@@ -1048,7 +1068,7 @@ bot.on(message('text'), async (ctx) => {
   }
   
   // Check if the message is a token mint address (direct address)
-  if (isValidTokenMint(userMessage)) {
+  if (isValidTokenMint(userMessage) || userMessage === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL') {
     // Show typing indicator
     await ctx.sendChatAction('typing');
     
@@ -1057,12 +1077,31 @@ bot.on(message('text'), async (ctx) => {
       const isDetailsQuery = /(?:details|info|information|data)/i.test(ctx.message.text);
       
       if (isDetailsQuery) {
+        console.log('Fetching token details for direct mint address:', userMessage);
+        
+        // Send an initial message to the user
+        const initialMessage = await ctx.reply(`Fetching token details for ${userMessage}...`);
+        
         // Get token details
         const tokenResponse = await getTokenDetails(userMessage);
         
+        console.log(`Token details response for ${userMessage}:`, 
+          `success: ${tokenResponse.success}`, 
+          `error: ${tokenResponse.error || 'none'}`,
+          `data length: ${tokenResponse.data?.length || 0}`
+        );
+        
         // Format and send the details
         const formattedDetails = formatTokenDetails(tokenResponse);
-        await ctx.replyWithMarkdown(formattedDetails);
+        
+        // Edit the initial message with the details
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          initialMessage.message_id,
+          undefined,
+          formattedDetails,
+          { parse_mode: 'Markdown' }
+        );
       } else {
         // Get token price
         const priceResponse = await getTokenPrices([userMessage]);
@@ -1074,7 +1113,7 @@ bot.on(message('text'), async (ctx) => {
       return;
     } catch (error) {
       console.error('Error fetching token information:', error);
-      await ctx.reply('Sorry, there was an error fetching the token information. Please try again later.');
+      await ctx.reply(`Sorry, there was an error fetching the token information: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`);
       return;
     }
   }
@@ -1115,23 +1154,42 @@ bot.on(message('text'), async (ctx) => {
     // Get the mint address from any of the capture groups
     const mintAddress = (tokenDetailsMatch[1] || tokenDetailsMatch[2] || tokenDetailsMatch[3] || '').trim();
     
-    // Validate mint address
-    if (mintAddress && isValidTokenMint(mintAddress)) {
+    // Validate mint address - but allow the specific SONIC token address
+    const isSonicToken = mintAddress === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+    if ((mintAddress && isValidTokenMint(mintAddress)) || isSonicToken) {
       // Show typing indicator
       await ctx.sendChatAction('typing');
       
       try {
         console.log('Fetching token details for:', mintAddress);
+        
+        // Send an initial message to the user
+        const initialMessage = await ctx.reply(`Fetching token details for ${mintAddress}...`);
+        
         // Get token details
         const tokenResponse = await getTokenDetails(mintAddress);
         
+        console.log(`Token details response for ${mintAddress}:`, 
+          `success: ${tokenResponse.success}`, 
+          `error: ${tokenResponse.error || 'none'}`,
+          `data length: ${tokenResponse.data?.length || 0}`
+        );
+        
         // Format and send the details
         const formattedDetails = formatTokenDetails(tokenResponse);
-        await ctx.replyWithMarkdown(formattedDetails);
+        
+        // Edit the initial message with the details
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          initialMessage.message_id,
+          undefined,
+          formattedDetails,
+          { parse_mode: 'Markdown' }
+        );
         return;
       } catch (error) {
         console.error('Error fetching token details:', error);
-        await ctx.reply('Sorry, there was an error fetching the token details. Please try again later.');
+        await ctx.reply(`Sorry, there was an error fetching the token details: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`);
         return;
       }
     }
@@ -1428,7 +1486,7 @@ bot.on(message('text'), async (ctx) => {
       return;
     } catch (error) {
       console.error('Error fetching SOL-SONIC pool information:', error);
-      await ctx.reply('Sorry, there was an error fetching the SOL-SONIC pool information. Please try again later.');
+      await ctx.reply('Sorry, there was an error fetching the SOL-SONIC liquidity pool data. The service might be temporarily unavailable. Please try again later.');
       return;
     }
   } else if (poolListRegex.test(userMessage)) {

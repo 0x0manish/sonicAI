@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Details API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,.3);
+            border-radius: 50%;
+            border-top-color: #000;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Token Details API Test</h1>
+    
+    <div>
+        <input type="text" id="mintAddress" value="mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL" style="width: 400px; padding: 8px;">
+        <button id="fetchButton">Fetch Token Details</button>
+        <button id="fetchDirectButton">Fetch from Sega API Directly</button>
+        <span id="loading" class="loading" style="display: none;"></span>
+    </div>
+    
+    <h2>Response:</h2>
+    <pre id="response">Click the button to fetch token details...</pre>
+    
+    <script>
+        document.getElementById('fetchButton').addEventListener('click', async () => {
+            const mintAddress = document.getElementById('mintAddress').value.trim();
+            const loadingIndicator = document.getElementById('loading');
+            const responseElement = document.getElementById('response');
+            
+            if (!mintAddress) {
+                responseElement.textContent = 'Please enter a mint address';
+                return;
+            }
+            
+            try {
+                loadingIndicator.style.display = 'inline-block';
+                responseElement.textContent = 'Fetching token details...';
+                
+                // Add a timestamp to prevent caching
+                const timestamp = new Date().getTime();
+                const url = `/api/token-details?mintAddress=${mintAddress}&_t=${timestamp}`;
+                
+                console.log('Fetching from URL:', url);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+                
+                const responseText = await response.text();
+                console.log('Response text:', responseText);
+                
+                try {
+                    const data = JSON.parse(responseText);
+                    responseElement.textContent = JSON.stringify(data, null, 2);
+                } catch (parseError) {
+                    console.error('Error parsing JSON:', parseError);
+                    responseElement.textContent = responseText;
+                }
+            } catch (error) {
+                console.error('Error fetching token details:', error);
+                responseElement.textContent = `Error: ${error.message}`;
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('fetchDirectButton').addEventListener('click', async () => {
+            const mintAddress = document.getElementById('mintAddress').value.trim();
+            const loadingIndicator = document.getElementById('loading');
+            const responseElement = document.getElementById('response');
+            
+            if (!mintAddress) {
+                responseElement.textContent = 'Please enter a mint address';
+                return;
+            }
+            
+            try {
+                loadingIndicator.style.display = 'inline-block';
+                responseElement.textContent = 'Fetching token details directly from Sega API...';
+                
+                // Add a timestamp to prevent caching
+                const timestamp = new Date().getTime();
+                const url = `https://api.sega.so/api/mint/ids?mints=${mintAddress}&_t=${timestamp}`;
+                
+                console.log('Fetching directly from URL:', url);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'accept': 'application/json',
+                        'Origin': 'https://sega.so',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                        'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
+                    }
+                });
+                
+                console.log('Direct API response status:', response.status);
+                console.log('Direct API response headers:', response.headers);
+                
+                const responseText = await response.text();
+                console.log('Direct API response text:', responseText);
+                
+                try {
+                    const data = JSON.parse(responseText);
+                    responseElement.textContent = JSON.stringify(data, null, 2);
+                } catch (parseError) {
+                    console.error('Error parsing JSON:', parseError);
+                    responseElement.textContent = responseText;
+                }
+            } catch (error) {
+                console.error('Error fetching token details directly:', error);
+                responseElement.textContent = `Error: ${error.message}`;
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html> 

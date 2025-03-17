@@ -112,7 +112,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Validate mint address format
-    if (!isValidTokenMint(mintAddress)) {
+    console.log('Validating mint address format:', mintAddress);
+    const isValid = isValidTokenMint(mintAddress);
+    console.log('Mint address validation result:', isValid);
+    
+    if (!isValid) {
       console.error('Invalid mint address format:', mintAddress);
       return NextResponse.json(
         { 
@@ -126,7 +130,11 @@ export async function GET(req: NextRequest) {
     // Get token details from the API
     console.log('Fetching token details for:', mintAddress);
     const tokenData = await getTokenDetails(mintAddress);
-    console.log('Token data fetched:', tokenData.success, 'error:', tokenData.error || 'none');
+    console.log('Token data fetched:', 
+      'success:', tokenData.success, 
+      'error:', tokenData.error || 'none',
+      'data length:', tokenData.data?.length || 0
+    );
     
     if (!tokenData.success || !tokenData.data || tokenData.data.length === 0) {
       console.error('Failed to fetch token details:', tokenData.error);
@@ -141,14 +149,27 @@ export async function GET(req: NextRequest) {
     }
     
     // Return the data
+    console.log('Successfully returning token details for:', mintAddress);
+    console.log('Token data being returned:', JSON.stringify(tokenData, null, 2));
     return NextResponse.json(tokenData, { headers: corsHeaders });
   } catch (error) {
     console.error('Error in token details API route (GET):', error);
     
+    // Check if it's a timeout error
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Request timed out when fetching token details. Please try again later.' 
+        },
+        { status: 504, headers: corsHeaders }
+      );
+    }
+    
     return NextResponse.json(
       { 
         success: false,
-        error: 'An error occurred while processing your request' 
+        error: `An error occurred while processing your request: ${error instanceof Error ? error.message : 'Unknown error'}` 
       },
       { status: 500, headers: corsHeaders }
     );
