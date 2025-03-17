@@ -57,19 +57,43 @@ function SafeMarkdown({ children }: { children: string }) {
           code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || '');
             return !inline ? (
-              <pre className="bg-gray-800 dark:bg-gray-900 rounded-md p-3 overflow-x-auto">
-                <code
-                  className={match ? `language-${match[1]}` : ''}
-                  {...props}
-                >
-                  {children}
-                </code>
-              </pre>
+              <div className="not-prose">
+                <pre className="bg-gray-800 dark:bg-gray-900 rounded-md p-3 overflow-x-auto">
+                  <code
+                    className={match ? `language-${match[1]}` : ''}
+                    {...props}
+                  >
+                    {children}
+                  </code>
+                </pre>
+              </div>
             ) : (
               <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
                 {children}
               </code>
             );
+          },
+          // Fix paragraph wrapping for pre elements
+          p: ({ node, children, ...props }: any) => {
+            // Check if children contains a pre element
+            const hasPreElement = React.Children.toArray(children).some(
+              (child) => 
+                React.isValidElement(child) && 
+                typeof child.type === 'string' && 
+                child.type === 'div' && 
+                child.props && 
+                typeof child.props === 'object' && 
+                'className' in child.props && 
+                child.props.className === 'not-prose'
+            );
+            
+            // If it has a pre element, just render the children without the p wrapper
+            if (hasPreElement) {
+              return <>{children}</>;
+            }
+            
+            // Otherwise, render as normal paragraph
+            return <p {...props}>{children}</p>;
           },
           // Customize links to open in new tab and handle errors
           a: ({ node, children, href, ...props }: any) => {

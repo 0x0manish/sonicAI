@@ -8,6 +8,8 @@ import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from 
 import { requestFaucetTokens } from '../lib/faucet-utils';
 import { getTokenPrices, formatTokenPrices, isValidTokenMint } from '../lib/token-utils';
 import { getSonicStats, formatSonicStats } from '../lib/stats-utils';
+import { initializeAgentWallet, getAgentWallet, isAgentWalletInitialized } from '../lib/agent-wallet';
+import { AGENT_WALLET_CONFIG, validateWalletConfig } from '../lib/wallet-config';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -23,6 +25,16 @@ if (fs.existsSync(envLocalPath)) {
 // Manually get API keys from environment
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+// Log environment variables for debugging (without showing full private key)
+console.log('Environment variables loaded:');
+console.log('- TELEGRAM_BOT_TOKEN:', TELEGRAM_BOT_TOKEN ? 'Set' : 'Not set');
+console.log('- OPENAI_API_KEY:', OPENAI_API_KEY ? 'Set' : 'Not set');
+console.log('- AGENT_WALLET_PRIVATE_KEY:', process.env.AGENT_WALLET_PRIVATE_KEY ? 
+  `Set (starts with ${process.env.AGENT_WALLET_PRIVATE_KEY.substring(0, 4)}...)` : 'Not set');
+console.log('- SONIC_RPC_URL:', process.env.SONIC_RPC_URL || 'Not set');
+console.log('- SONIC_TESTNET_RPC_URL:', process.env.SONIC_TESTNET_RPC_URL || 'Not set');
+console.log('- Current working directory:', process.cwd());
 
 // Check if required environment variables are set
 if (!TELEGRAM_BOT_TOKEN) {
@@ -40,8 +52,64 @@ const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
 });
 
-// Initialize bot with token
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+// Track wallet initialization status
+let agentWalletInitialized = false;
+
+// Initialize the bot
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN || '');
+
+// Initialize the agent wallet if configuration is valid
+console.log('Checking wallet configuration...');
+console.log('AGENT_WALLET_CONFIG:', {
+  privateKeySet: !!AGENT_WALLET_CONFIG.privateKey,
+  privateKeyLength: AGENT_WALLET_CONFIG.privateKey ? AGENT_WALLET_CONFIG.privateKey.length : 0,
+  rpcUrl: AGENT_WALLET_CONFIG.rpcUrl,
+  testnetRpcUrl: AGENT_WALLET_CONFIG.testnetRpcUrl
+});
+
+// Force reload environment variables into the wallet config
+if (process.env.AGENT_WALLET_PRIVATE_KEY) {
+  console.log('Updating wallet config with environment variables...');
+  AGENT_WALLET_CONFIG.privateKey = process.env.AGENT_WALLET_PRIVATE_KEY;
+  AGENT_WALLET_CONFIG.rpcUrl = process.env.SONIC_RPC_URL || AGENT_WALLET_CONFIG.rpcUrl;
+  AGENT_WALLET_CONFIG.testnetRpcUrl = process.env.SONIC_TESTNET_RPC_URL || AGENT_WALLET_CONFIG.testnetRpcUrl;
+  
+  console.log('Updated wallet config:', {
+    privateKeySet: !!AGENT_WALLET_CONFIG.privateKey,
+    privateKeyLength: AGENT_WALLET_CONFIG.privateKey ? AGENT_WALLET_CONFIG.privateKey.length : 0,
+    rpcUrl: AGENT_WALLET_CONFIG.rpcUrl,
+    testnetRpcUrl: AGENT_WALLET_CONFIG.testnetRpcUrl
+  });
+}
+
+if (validateWalletConfig()) {
+  console.log('Wallet configuration is valid, initializing agent wallet...');
+  try {
+    const wallet = initializeAgentWallet(AGENT_WALLET_CONFIG);
+    agentWalletInitialized = wallet !== null;
+    
+    if (agentWalletInitialized && wallet !== null) {
+      console.log('Agent wallet initialized successfully');
+      console.log('Public key:', wallet.getPublicKey());
+      
+      // Check wallet balance
+      wallet.getBalance()
+        .then(balance => console.log('Mainnet balance:', balance, 'SOL'))
+        .catch(err => console.error('Failed to get mainnet balance:', err));
+      
+      wallet.getTestnetBalance()
+        .then(balance => console.log('Testnet balance:', balance, 'SOL'))
+        .catch(err => console.error('Failed to get testnet balance:', err));
+    } else {
+      console.error('Failed to initialize agent wallet');
+    }
+  } catch (error) {
+    console.error('Exception during wallet initialization:', error);
+    agentWalletInitialized = false;
+  }
+} else {
+  console.error('Wallet configuration is invalid, agent wallet will not be initialized');
+}
 
 // Sonic AI system prompt
 const SONIC_AI_SYSTEM_PROMPT = `
@@ -99,6 +167,7 @@ Practical Knowledge:
 - Users can request test tokens from the Sega faucet using the /faucet command or by asking for tokens
 - Users can check token prices on Sonic by using the /price command or by simply sending a token mint address
 - Users can check Sonic chain TVL and 24-hour volume stats by using the /stats command or by asking about stats
+- Users can request me to send SOL from my wallet to any Sonic address using the /send command or by asking me to send SOL
 
 IMPORTANT FUNCTIONALITY:
 - This bot has built-in wallet balance checking capability
@@ -109,6 +178,14 @@ IMPORTANT FUNCTIONALITY:
 - This bot also has built-in faucet functionality to request test tokens from the Sega faucet
 - When a user asks for test tokens or to use the faucet, tell them to use the /faucet command with their wallet address
 - If a user asks "can you send me test tokens to [address]", tell them to use the /faucet command
+- This bot also has built-in transaction capability
+- I have my own Sonic wallet and can send SOL to users
+- When a user asks me to send SOL to an address (e.g., "send 0.1 SOL to [address]"), I can process the transaction
+- The bot will automatically detect transaction requests and send SOL from my wallet to the specified address
+- If a user asks "can you send 0.1 SOL to [address]", tell them you'll process the transaction for them
+- Users can also use the /send command to send SOL (e.g., "/send 0.1 [address]")
+- I will show my wallet address and current balance before sending a transaction
+- I can only send SOL if my wallet has sufficient balance
 
 RPC URLs:
 - Mainnet: https://rpc.mainnet-alpha.sonic.game
@@ -156,6 +233,12 @@ function stripMarkdown(text: string): string {
 // Store conversation history for each user
 const userSessions: Record<number, { messages: any[] }> = {};
 
+// Improved regex for detecting wallet-related queries
+const walletRegex = /(?:your|agent|bot|ai|do you have|what is your|what'?s your).*(?:wallet|address|balance|public key)|(?:testnet|mainnet|devnet).*(?:balance|wallet)|(?:wallet|balance)(?:\?|$)/i;
+
+// Regex for detecting transaction requests
+const transactionRegex = /(?:send|transfer|pay|tip).*?(?:sol|sonic)|(?:can you send sol)/i;
+
 // Welcome message
 bot.start(async (ctx) => {
   // Reset session for this user
@@ -182,6 +265,7 @@ Need help with:
 • Checking Sonic chain stats (use /stats or ask about TVL/volume)
 • DeFi activities like swaps and liquidity provision
 • Getting test tokens (use /faucet <address>)
+• Sending SOL from my wallet to any address (use /send <amount> <recipient_address> or ask me to send SOL)
 
 What can I speed up for you today?
 `;
@@ -200,6 +284,8 @@ Here are some commands you can use:
 /price <token_mint_address> - Check the price of a token on Sonic
 /stats - Check Sonic chain TVL and 24-hour volume
 /faucet <wallet_address> - Request test tokens from the Sega faucet
+/send <amount> <recipient_address> - Send SOL from the agent wallet to a recipient
+/mywallet - Show my wallet information including public key and balances
 
 You can also ask me about:
 - Sonic's technologies (HyperGrid, Sorada, Rush)
@@ -209,6 +295,8 @@ You can also ask me about:
 - DeFi activities like swaps and providing liquidity
 - Token prices (just send a token mint address or ask "what's the price of token <mint_address>")
 - Sonic chain stats (just ask about TVL or volume)
+- Sending SOL (just ask "send 0.1 SOL to <address>")
+- My wallet information (just ask "what's your wallet address" or "show me your wallet")
 
 Just send me a message, and I'll do my best to help you!
   `);
@@ -335,6 +423,153 @@ bot.command('stats', async (ctx) => {
   } catch (error) {
     console.error('Error fetching Sonic chain stats:', error);
     await ctx.reply('Sorry, there was an error fetching Sonic chain stats. Please try again later.');
+  }
+});
+
+// Transaction command
+bot.command('send', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  if (args.length < 3) {
+    return ctx.reply('Please provide an amount and a recipient address. Usage: /send <amount> <recipient_address>');
+  }
+
+  const amount = parseFloat(args[1].trim());
+  const recipient = args[2].trim();
+  
+  // Validate amount
+  if (isNaN(amount) || amount <= 0) {
+    return ctx.reply('Invalid amount. Please provide a positive number.');
+  }
+  
+  // Validate recipient address
+  if (!isValidSonicAddress(recipient)) {
+    return ctx.reply('Invalid recipient address format. Please provide a valid Sonic wallet address.');
+  }
+  
+  // Check if agent wallet is initialized
+  const agentWallet = getAgentWallet();
+  if (!agentWallet) {
+    return ctx.reply('Sorry, the agent wallet is not properly configured. Transactions are currently unavailable.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get wallet information
+    const balance = await agentWallet.getBalance();
+    const networkInfo = agentWallet.getNetworkInfo();
+    
+    // Check if wallet has enough balance
+    if (balance < amount) {
+      return ctx.reply(`Insufficient balance. Current balance: ${balance.toFixed(4)} SOL`);
+    }
+    
+    // Prevent sending on mainnet
+    if (!networkInfo.isTestnet) {
+      return ctx.reply(`For security reasons, I can only send SOL on testnet, not on mainnet. Current network: ${networkInfo.network}`);
+    }
+    
+    // Show wallet info before sending transaction
+    const walletInfoMessage = `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet:\n\nMy wallet address: ${agentWallet.getPublicKey()}\nCurrent balance: ${balance.toFixed(4)} SOL\nNetwork: ${networkInfo.network}`;
+    await ctx.reply(walletInfoMessage);
+    
+    // Send transaction
+    const result = await agentWallet.sendSol(recipient, amount);
+    
+    // Format and send the result
+    if (!result.success) {
+      await ctx.reply(`Transaction failed: ${result.error}`);
+    } else {
+      await ctx.reply(`Transaction successful!\n\nSent ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)}\nTransaction signature: ${result.signature}`);
+    }
+  } catch (error) {
+    console.error('Error sending transaction:', error);
+    await ctx.reply('Sorry, there was an error processing the transaction. Please try again later.');
+  }
+});
+
+// Add a new command to show the agent's wallet information
+bot.command('mywallet', async (ctx) => {
+  // Log wallet status when command is called
+  console.log('Wallet status when /mywallet called:', {
+    initialized: agentWalletInitialized,
+    available: isAgentWalletInitialized()
+  });
+  
+  // Check if agent wallet is initialized
+  if (!isAgentWalletInitialized()) {
+    return ctx.reply('Sorry, my wallet is not properly configured. Please try again later.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get wallet instance
+    const agentWallet = getAgentWallet();
+    if (!agentWallet) {
+      return ctx.reply('Sorry, my wallet is not properly configured. Please try again later.');
+    }
+    
+    // Get wallet information
+    const publicKey = agentWallet.getPublicKey();
+    const balance = await agentWallet.getBalance();
+    const testnetBalance = await agentWallet.getTestnetBalance();
+    const networkInfo = agentWallet.getNetworkInfo();
+    
+    // Format and send the wallet information
+    let walletInfo = `🔑 My Wallet Information\n\n`;
+    walletInfo += `Public Key: ${publicKey}\n\n`;
+    walletInfo += `Network: ${networkInfo.network}\n\n`;
+    walletInfo += `Mainnet Balance: ${balance.toFixed(4)} SOL\n\n`;
+    
+    if (testnetBalance !== null) {
+      walletInfo += `Testnet Balance: ${testnetBalance.toFixed(4)} SOL\n\n`;
+    }
+    
+    walletInfo += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
+    
+    await ctx.reply(walletInfo);
+  } catch (error) {
+    console.error('Error getting agent wallet information:', error);
+    await ctx.reply('Sorry, there was an error getting my wallet information. Please try again later.');
+  }
+});
+
+// Command to show the agent's wallet information
+bot.command('wallet', async (ctx) => {
+  console.log('Wallet command received');
+  console.log('Wallet initialized:', agentWalletInitialized);
+  
+  if (!agentWalletInitialized) {
+    return ctx.reply('Sorry, my wallet is not properly configured. Please try again later.');
+  }
+  
+  const wallet = getAgentWallet();
+  if (!wallet) {
+    console.error('Wallet is null despite being marked as initialized');
+    agentWalletInitialized = false;
+    return ctx.reply('Sorry, there was an error accessing my wallet. Please try again later.');
+  }
+  
+  try {
+    const publicKey = wallet.getPublicKey();
+    const networkInfo = wallet.getNetworkInfo();
+    const mainnetBalance = await wallet.getBalance();
+    const testnetBalance = await wallet.getTestnetBalance();
+    
+    let message = `🔑 My wallet address is: \`${publicKey}\`\n\n`;
+    message += `💰 Mainnet balance: ${mainnetBalance.toFixed(4)} SOL\n`;
+    
+    if (testnetBalance !== null) {
+      message += `🧪 Testnet balance: ${testnetBalance.toFixed(4)} SOL\n`;
+    }
+    
+    return ctx.reply(message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error getting wallet information:', error);
+    return ctx.reply('Sorry, there was an error retrieving my wallet information. Please try again later.');
   }
 });
 
@@ -465,6 +700,148 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply('Sorry, there was an error fetching Sonic chain stats. Please try again later.');
       return;
     }
+  }
+  
+  // Check if the message is asking for the agent's wallet info
+  // Log the message and regex match for debugging
+  console.log('Message:', userMessage);
+  console.log('Matches wallet regex:', walletRegex.test(userMessage));
+  console.log('Wallet status:', {
+    initialized: agentWalletInitialized,
+    available: isAgentWalletInitialized()
+  });
+  
+  if (walletRegex.test(userMessage)) {
+    console.log('Wallet-related query detected');
+    
+    // Check if agent wallet is initialized
+    if (!agentWalletInitialized) {
+      console.log('Wallet not initialized, sending error message');
+      return ctx.reply('Sorry, my wallet is not properly configured. Please try again later.');
+    }
+    
+    const wallet = getAgentWallet();
+    if (!wallet) {
+      console.error('Wallet is null despite being marked as initialized');
+      agentWalletInitialized = false;
+      return ctx.reply('Sorry, there was an error accessing my wallet. Please try again later.');
+    }
+    
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      const publicKey = wallet.getPublicKey();
+      const networkInfo = wallet.getNetworkInfo();
+      const mainnetBalance = await wallet.getBalance();
+      const testnetBalance = await wallet.getTestnetBalance();
+      
+      // Check if asking specifically about testnet/devnet balance
+      const isTestnetQuery = /(?:testnet|devnet).*(?:balance|wallet)/i.test(userMessage);
+      const isMainnetQuery = /(?:mainnet).*(?:balance|wallet)/i.test(userMessage);
+      const isAddressQuery = /(?:address|public key)/i.test(userMessage);
+      
+      if (isTestnetQuery) {
+        // Just show testnet balance
+        await ctx.reply(`My testnet wallet balance is ${testnetBalance !== null ? testnetBalance.toFixed(4) : '0.0000'} SOL.`);
+      } else if (isMainnetQuery) {
+        // Just show mainnet balance
+        await ctx.reply(`My mainnet wallet balance is ${mainnetBalance.toFixed(4)} SOL.`);
+      } else if (isAddressQuery) {
+        // Just show wallet address
+        await ctx.reply(`My wallet address is: ${publicKey}`);
+      } else {
+        // Format and send the full wallet information
+        let message = `🔑 My wallet address is: \`${publicKey}\`\n\n`;
+        message += `💰 Mainnet balance: ${mainnetBalance.toFixed(4)} SOL\n`;
+        
+        if (testnetBalance !== null) {
+          message += `🧪 Testnet balance: ${testnetBalance.toFixed(4)} SOL\n`;
+        }
+        
+        message += `\nNote: For security reasons, I can only send SOL on testnet, not on mainnet.`;
+        
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+      }
+      return;
+    } catch (error) {
+      console.error('Error getting wallet information:', error);
+      return ctx.reply('Sorry, there was an error retrieving my wallet information. Please try again later.');
+    }
+  }
+  
+  // Check if the message is a transaction request
+  const specificTransactionRegex = /send\s+(\d+(\.\d+)?)\s+sol\s+to\s+([a-zA-Z0-9]{32,44})/i;
+  const specificMatch = userMessage.match(specificTransactionRegex);
+  
+  if (specificMatch && specificMatch[1] && specificMatch[3]) {
+    const amount = parseFloat(specificMatch[1].trim());
+    const recipient = specificMatch[3].trim();
+    
+    // Validate wallet address
+    if (isValidSonicAddress(recipient)) {
+      // Check if agent wallet is initialized
+      if (!agentWalletInitialized) {
+        await ctx.reply('Sorry, my wallet is not properly configured. Transactions are currently unavailable.');
+        return;
+      }
+      
+      const agentWallet = getAgentWallet();
+      if (!agentWallet) {
+        await ctx.reply('Sorry, the agent wallet is not properly configured. Transactions are currently unavailable.');
+        return;
+      }
+      
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Get wallet information
+        const balance = await agentWallet.getBalance();
+        const networkInfo = agentWallet.getNetworkInfo();
+        
+        // Check if wallet has enough balance
+        if (balance < amount) {
+          await ctx.reply(`Insufficient balance. Current balance: ${balance.toFixed(4)} SOL`);
+          return;
+        }
+        
+        // Prevent sending on mainnet
+        if (!networkInfo.isTestnet) {
+          await ctx.reply(`For security reasons, I can only send SOL on testnet, not on mainnet. Current network: ${networkInfo.network}`);
+          return;
+        }
+        
+        // Show wallet info before sending transaction
+        const walletInfoMessage = `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet:\n\nMy wallet address: ${agentWallet.getPublicKey()}\nCurrent balance: ${balance.toFixed(4)} SOL\nNetwork: ${networkInfo.network}`;
+        await ctx.reply(walletInfoMessage);
+        
+        // Send transaction
+        const result = await agentWallet.sendSol(recipient, amount);
+        
+        // Format and send the result
+        if (!result.success) {
+          await ctx.reply(`Transaction failed: ${result.error}`);
+        } else {
+          await ctx.reply(`Transaction successful!\n\nSent ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)}\nTransaction signature: ${result.signature}`);
+        }
+        return;
+      } catch (error) {
+        console.error('Error sending transaction:', error);
+        await ctx.reply('Sorry, there was an error processing the transaction. Please try again later.');
+        return;
+      }
+    }
+  } else if (transactionRegex.test(userMessage) && !specificMatch) {
+    // Handle general transaction requests
+    if (!agentWalletInitialized) {
+      await ctx.reply('Sorry, my wallet is not properly configured. I cannot send transactions at this time.');
+      return;
+    }
+    
+    await ctx.reply('I can send SOL for you! Please use the format: "Send X SOL to ADDRESS"\n\n' +
+      'For example: "Send 0.1 SOL to 8xiv9G1gYEXcWcwg9YVgbCUeEPB4XbRSr6WDwJGTXNDU"');
+    return;
   }
   
   // Add user message to session
