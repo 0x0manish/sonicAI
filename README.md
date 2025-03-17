@@ -1,7 +1,7 @@
 # Sonic AI Agent
 
 <div align="center">
-  <img src="./public/logo.jpeg" alt="Sonic AI Logo" width="120" height="120" style="border-radius: 50%;">
+  <img src="./public/logo.jpeg" alt="Sonic AI Logo" width="240" height="240" style="border-radius: 50%;">
 </div>
 
 Sonic AI is an intelligent assistant specialized in Solana blockchain and Sonic SVM (Solana Virtual Machine) technology. This project provides both a web interface and a Telegram bot for interacting with the Sonic AI agent.
