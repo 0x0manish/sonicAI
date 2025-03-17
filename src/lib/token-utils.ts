@@ -199,6 +199,7 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
     console.log('API URL with timestamp:', urlWithTimestamp);
     
     // Make the request with additional headers
+    console.log('Sending request to Sega API...');
     const response = await fetch(urlWithTimestamp, {
       method: 'GET',
       headers: {
@@ -212,6 +213,7 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
     });
 
     console.log('API response status:', response.status);
+    console.log('API response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       console.error(`Failed to fetch token details: ${response.status} ${response.statusText}`);
@@ -219,7 +221,7 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
       // Try to get the response text for more information
       try {
         const responseText = await response.text();
-        console.error('Response text:', responseText);
+        console.error('Error response text:', responseText);
       } catch (textError) {
         console.error('Could not get response text:', textError);
       }
@@ -235,6 +237,7 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
     // Get the response as text first
     const responseText = await response.text();
     console.log('Response text preview:', responseText.substring(0, 200) + '...');
+    console.log('Full response text length:', responseText.length);
     
     // Check if the response is valid JSON
     if (!responseText.trim() || !responseText.trim().startsWith('{')) {
@@ -247,21 +250,32 @@ export async function getTokenDetails(mintAddress: string): Promise<TokenDetails
       };
     }
     
-    const data = JSON.parse(responseText) as TokenDetailsResponse;
-    
-    // Validate the response data
-    if (!data || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
-      console.error('No token details found for mint:', mintAddress);
+    try {
+      const data = JSON.parse(responseText) as TokenDetailsResponse;
+      console.log('Parsed token data:', JSON.stringify(data, null, 2));
+      
+      // Validate the response data
+      if (!data || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
+        console.error('No token details found for mint:', mintAddress);
+        return {
+          id: '',
+          success: false,
+          data: [],
+          error: `No token details found for mint address: ${mintAddress}`
+        };
+      }
+      
+      console.log('Successfully fetched token details for mint:', mintAddress);
+      return data;
+    } catch (parseError) {
+      console.error('Error parsing JSON response:', parseError);
       return {
         id: '',
         success: false,
         data: [],
-        error: `No token details found for mint address: ${mintAddress}`
+        error: `Failed to parse token details: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`
       };
     }
-    
-    console.log('Successfully fetched token details for mint:', mintAddress);
-    return data;
   } catch (error) {
     console.error('Error fetching token details:', error);
     return {

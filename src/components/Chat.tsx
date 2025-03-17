@@ -11,6 +11,7 @@ import { isValidPoolId, formatLiquidityPoolList } from '@/lib/liquidity-pool-uti
 import { validateAIConfig } from '@/lib/ai-config';
 import { getEnvVars, logEnvVars } from '@/lib/env-utils';
 import Image from 'next/image';
+import { isValidMintAddress, SOL_MINT, solToLamports, lamportsToSol } from '@/lib/swap-utils';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
@@ -89,6 +90,163 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Direct check for swap requests at the beginning
+      if (content.toLowerCase().includes('swap') && content.toLowerCase().includes('sol')) {
+        console.log('Potential swap request detected:', content);
+        
+        // Check for the exact format: swap X sol to ADDRESS
+        const exactFormatRegex = /swap\s+(\d+(?:\.\d+)?)\s+sol\s+to\s+([\w\d]{32,44})/i;
+        const exactMatch = content.match(exactFormatRegex);
+        
+        if (exactMatch && exactMatch[1] && exactMatch[2]) {
+          const amount = parseFloat(exactMatch[1]);
+          const outputMint = exactMatch[2];
+          
+          console.log('Exact format swap request detected:', { amount, outputMint });
+          
+          // Validate output mint
+          if (isValidMintAddress(outputMint)) {
+            // Assume input is SOL for now
+            console.log('Calling checkSwap with:', { inputMint: SOL_MINT, outputMint, amount });
+            const swapResult = await checkSwap(SOL_MINT, outputMint, amount);
+            console.log('Swap result:', swapResult);
+            setMessages((prev) => [...prev, { role: 'assistant', content: swapResult }]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+      
+      // Check if the message is confirming a swap
+      const confirmSwapRegex = /^(?:yes|confirm|execute|proceed|do it|swap it|go ahead)$/i;
+      if (confirmSwapRegex.test(content.trim())) {
+        // Check if there's a pending swap
+        const lastSwapDataStr = sessionStorage.getItem('lastSwapData');
+        if (lastSwapDataStr) {
+          // Show a loading message
+          setMessages((prev) => [...prev, { 
+            role: 'assistant', 
+            content: 'Checking your balance before executing the swap...' 
+          }]);
+          
+          // Check balance before executing the swap
+          const balanceCheckResult = await checkSwapBalance();
+          
+          if (balanceCheckResult.startsWith('Insufficient balance') || balanceCheckResult.startsWith('Error') || balanceCheckResult.startsWith('Network error')) {
+            // If balance check fails, show the error
+            setMessages((prev) => {
+              // Replace the loading message with the error
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: balanceCheckResult 
+              };
+              return newMessages;
+            });
+          } else {
+            // If balance check passes, show a message that swap execution is not implemented yet
+            setMessages((prev) => {
+              // Replace the loading message with the success message
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: 'Balance check passed! You have sufficient funds for this swap.\n\nSwap execution is not implemented yet. In a production environment, this would execute the swap transaction on the blockchain.' 
+              };
+              return newMessages;
+            });
+          }
+          
+          // Clear the swap data
+          sessionStorage.removeItem('lastSwapData');
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Check if the message is canceling a swap
+      const cancelSwapRegex = /^(?:no|cancel|stop|abort|don't|do not)$/i;
+      if (cancelSwapRegex.test(content.trim())) {
+        // Check if there's a pending swap
+        const lastSwapDataStr = sessionStorage.getItem('lastSwapData');
+        if (lastSwapDataStr) {
+          // Clear the swap data
+          sessionStorage.removeItem('lastSwapData');
+          setMessages((prev) => [...prev, { role: 'assistant', content: 'Swap canceled.' }]);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Check if the message is a swap request
+      const swapRegex = /(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+(?:sol|sonic|usdc|token)\s+(?:to|for)\s+([\w\d]{32,44})/i;
+      const swapMatch = content.match(swapRegex);
+      
+      console.log('Swap regex match:', swapMatch);
+      
+      // If the standard regex doesn't match, try a more flexible one
+      if (!swapMatch) {
+        console.log('Standard swap regex did not match, trying flexible regex');
+        const flexibleSwapRegex = /(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+(?:sol|sonic|usdc|token)(?:\s+(?:to|for))?\s+([\w\d]{32,44})/i;
+        const flexibleMatch = content.match(flexibleSwapRegex);
+        console.log('Flexible swap regex match:', flexibleMatch);
+        
+        if (flexibleMatch && flexibleMatch[1] && flexibleMatch[2]) {
+          const amount = parseFloat(flexibleMatch[1]);
+          const outputMint = flexibleMatch[2];
+          
+          console.log('Flexible swap request detected:', { amount, outputMint });
+          console.log('Is valid mint address:', isValidMintAddress(outputMint));
+          
+          // Validate output mint
+          if (isValidMintAddress(outputMint)) {
+            // Assume input is SOL for now
+            console.log('Calling checkSwap with:', { inputMint: SOL_MINT, outputMint, amount });
+            const swapResult = await checkSwap(SOL_MINT, outputMint, amount);
+            console.log('Swap result:', swapResult);
+            setMessages((prev) => [...prev, { role: 'assistant', content: swapResult }]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+      
+      if (swapMatch && swapMatch[1] && swapMatch[2]) {
+        const amount = parseFloat(swapMatch[1]);
+        const outputMint = swapMatch[2];
+        
+        console.log('Swap request detected:', { amount, outputMint });
+        console.log('Is valid mint address:', isValidMintAddress(outputMint));
+        
+        // Validate output mint
+        if (isValidMintAddress(outputMint)) {
+          // Assume input is SOL for now
+          console.log('Calling checkSwap with:', { inputMint: SOL_MINT, outputMint, amount });
+          const swapResult = await checkSwap(SOL_MINT, outputMint, amount);
+          console.log('Swap result:', swapResult);
+          setMessages((prev) => [...prev, { role: 'assistant', content: swapResult }]);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Check if the message is a swap request with two token addresses
+      const swapTokensRegex = /(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+([\w\d]{32,44})\s+(?:to|for)\s+([\w\d]{32,44})/i;
+      const swapTokensMatch = content.match(swapTokensRegex);
+      
+      if (swapTokensMatch && swapTokensMatch[1] && swapTokensMatch[2] && swapTokensMatch[3]) {
+        const amount = parseFloat(swapTokensMatch[1]);
+        const inputMint = swapTokensMatch[2];
+        const outputMint = swapTokensMatch[3];
+        
+        // Validate mint addresses
+        if (isValidMintAddress(inputMint) && isValidMintAddress(outputMint)) {
+          const swapResult = await checkSwap(inputMint, outputMint, amount);
+          setMessages((prev) => [...prev, { role: 'assistant', content: swapResult }]);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Check if the message is a faucet request
       const faucetRegex = /(?:faucet|send\s+(?:test\s+)?tokens\s+(?:to)?)\s+([1-9A-HJ-NP-Za-km-z]{32,44})/i;
       const faucetMatch = content.match(faucetRegex);
@@ -128,8 +286,46 @@ export default function Chat() {
         
         // Validate mint address
         if (mintAddress && isValidTokenMint(mintAddress)) {
-          const tokenDetailsResponse = await checkTokenDetails(mintAddress);
-          setMessages((prev) => [...prev, { role: 'assistant', content: tokenDetailsResponse }]);
+          // Show a loading message
+          setMessages((prev) => [...prev, { 
+            role: 'assistant', 
+            content: `I'll check the token details for the address ${mintAddress}. Just a moment!\n\nFetching details...` 
+          }]);
+          
+          try {
+            // Set a timeout for the token details request
+            const timeoutPromise = new Promise<string>((_, reject) => {
+              setTimeout(() => reject(new Error('Request timed out')), 15000);
+            });
+            
+            // Fetch token details with timeout
+            const tokenDetailsPromise = checkTokenDetails(mintAddress);
+            const tokenDetailsResponse = await Promise.race([tokenDetailsPromise, timeoutPromise]);
+            
+            // Update the loading message with the actual response
+            setMessages((prev) => {
+              // Replace the loading message with the actual response
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: tokenDetailsResponse 
+              };
+              return newMessages;
+            });
+          } catch (error) {
+            console.error('Error fetching token details:', error);
+            // Update the loading message with the error
+            setMessages((prev) => {
+              // Replace the loading message with the error
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = { 
+                role: 'assistant', 
+                content: `Sorry, I couldn't fetch the token details. ${error instanceof Error ? error.message : 'The service might be temporarily unavailable.'}` 
+              };
+              return newMessages;
+            });
+          }
+          
           setIsLoading(false);
           return;
         }
@@ -971,15 +1167,23 @@ export default function Chat() {
       const url = `/api/token-details?mintAddress=${mintAddress}&_t=${timestamp}`;
       console.log('API URL with timestamp:', url);
       
-      // Call the token details API
+      // Create an AbortController for the timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      // Call the token details API with timeout
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
-        }
+        },
+        signal: controller.signal
       });
+      
+      // Clear the timeout
+      clearTimeout(timeoutId);
 
       console.log('API response status:', response.status);
       
@@ -992,6 +1196,7 @@ export default function Chat() {
       // Get the response as text first
       const responseText = await response.text();
       console.log('Response text preview:', responseText.substring(0, 200) + '...');
+      console.log('Full response text length:', responseText.length);
       
       // Check if the response is empty or not JSON
       if (!responseText.trim()) {
@@ -1011,6 +1216,7 @@ export default function Chat() {
       let tokenData;
       try {
         tokenData = JSON.parse(responseText);
+        console.log('Parsed token data:', tokenData);
       } catch (parseError) {
         console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
         // If we can't parse it as JSON but it's a text response, return it directly
@@ -1032,10 +1238,226 @@ export default function Chat() {
       }
       
       // Use the formatTokenDetails function to format the response
-      return formatTokenDetails(tokenData);
+      const formattedResponse = formatTokenDetails(tokenData);
+      console.log('Formatted token details response:', formattedResponse.substring(0, 200) + '...');
+      return formattedResponse;
     } catch (error) {
       console.error('Error checking token details:', error);
-      return 'Sorry, there was an error fetching the token details. The service might be temporarily unavailable. Please try again later.';
+      if ((error as Error).name === 'AbortError') {
+        return 'Sorry, the request for token details timed out. Please try again later.';
+      }
+      return `Sorry, there was an error fetching the token details: ${error instanceof Error ? error.message : 'The service might be temporarily unavailable.'}`;
+    }
+  };
+
+  // Add these helper functions for swap functionality
+  const checkSwap = async (inputMint: string, outputMint: string, amount: number): Promise<string> => {
+    try {
+      console.log('Computing swap:', { inputMint, outputMint, amount });
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      
+      // Convert amount to lamports if input is SOL and amount is in SOL
+      let amountToUse = amount;
+      if (inputMint === SOL_MINT && amount < 1_000_000) {
+        amountToUse = solToLamports(amount);
+        console.log('Converted amount to lamports:', amountToUse);
+      }
+      
+      const apiUrl = `/api/swap/compute?_t=${timestamp}`;
+      const requestBody = {
+        inputMint,
+        outputMint,
+        amount: amountToUse,
+        slippageBps: 50 // Default slippage of 0.5%
+      };
+      
+      console.log('Swap API request:', { url: apiUrl, body: requestBody });
+      
+      // Call the swap compute API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('Swap API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from swap compute API:', response.status, errorText);
+        return `Error: Failed to compute swap: ${response.status} ${response.statusText}`;
+      }
+      
+      const swapData = await response.json();
+      
+      if (!swapData.success) {
+        return `Error computing swap: ${swapData.error || 'Unknown error'}`;
+      }
+      
+      // Format the swap details
+      const data = swapData.data;
+      
+      // Format input amount
+      let inputAmount: string;
+      if (data.inputMint === SOL_MINT) {
+        const solAmount = lamportsToSol(Number(data.inputAmount));
+        inputAmount = `${solAmount.toFixed(4)} SOL`;
+      } else {
+        // For non-SOL tokens, we'd ideally fetch the token metadata to get decimals
+        // For now, just show the raw amount
+        inputAmount = data.inputAmount;
+      }
+      
+      // Format output amount
+      let outputAmount: string;
+      if (data.outputMint === SOL_MINT) {
+        const solAmount = lamportsToSol(Number(data.outputAmount));
+        outputAmount = `${solAmount.toFixed(4)} SOL`;
+      } else {
+        // For non-SOL tokens, we'd ideally fetch the token metadata to get decimals
+        // For now, just show the raw amount
+        outputAmount = data.outputAmount;
+      }
+      
+      // Format the swap details
+      let result = `🔄 **Swap Details**\n\n`;
+      result += `From: ${inputAmount} (${data.inputMint.slice(0, 4)}...${data.inputMint.slice(-4)})\n\n`;
+      result += `To: ${outputAmount} (${data.outputMint.slice(0, 4)}...${data.outputMint.slice(-4)})\n\n`;
+      result += `Price Impact: ${data.priceImpactPct.toFixed(2)}%\n\n`;
+      result += `Slippage Tolerance: ${data.slippageBps / 100}%\n\n`;
+      
+      if (data.routePlan.length > 0) {
+        const route = data.routePlan[0];
+        result += `Fee: ${route.feeAmount} (${route.feeRate / 100}%)\n\n`;
+        result += `Pool: ${route.poolId.slice(0, 4)}...${route.poolId.slice(-4)}\n\n`;
+      }
+      
+      // Store the swap data in session storage for later use
+      sessionStorage.setItem('lastSwapData', JSON.stringify(swapData.data));
+      
+      // Add a prompt to execute the swap
+      result += `Would you like to execute this swap? Reply with "yes" to proceed or "no" to cancel.`;
+      
+      return result;
+    } catch (error) {
+      console.error('Error computing swap:', error);
+      return `Error: ${error instanceof Error ? error.message : 'An error occurred while computing the swap'}`;
+    }
+  };
+
+  const checkSwapBalance = async (): Promise<string> => {
+    try {
+      // Get the last swap data from session storage
+      const lastSwapDataStr = sessionStorage.getItem('lastSwapData');
+      if (!lastSwapDataStr) {
+        return 'Error: No swap data found. Please compute a swap first.';
+      }
+      
+      let lastSwapData;
+      try {
+        lastSwapData = JSON.parse(lastSwapDataStr);
+      } catch (parseError) {
+        console.error('Error parsing swap data from session storage:', parseError);
+        return 'Error: Invalid swap data. Please try computing the swap again.';
+      }
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      
+      console.log('Checking balance for swap:', {
+        inputMint: lastSwapData.inputMint,
+        amount: lastSwapData.inputAmount
+      });
+      
+      // Call the swap check balance API
+      try {
+        const response = await fetch(`/api/swap/check-balance?_t=${timestamp}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          body: JSON.stringify({
+            inputMint: lastSwapData.inputMint,
+            amount: lastSwapData.inputAmount
+          }),
+        });
+        
+        // Get the response text for better error handling
+        const responseText = await response.text();
+        
+        if (!response.ok) {
+          console.error('Error response from swap check balance API:', response.status, responseText);
+          
+          // Try to parse the error response as JSON
+          try {
+            const errorData = JSON.parse(responseText);
+            if (errorData && errorData.error) {
+              // Check for specific error messages
+              if (errorData.error.includes('wallet is not properly configured') || 
+                  errorData.error.includes('Failed to initialize agent wallet') ||
+                  errorData.error.includes('wallet configuration')) {
+                return 'The agent wallet is not properly configured. This is a server-side issue that needs to be fixed by the administrator. Please try again later or contact support.';
+              }
+              return `Error checking balance: ${errorData.error}`;
+            }
+          } catch (parseError) {
+            // If parsing fails, just use the status text
+            console.error('Error parsing error response:', parseError);
+          }
+          
+          // If we couldn't extract a specific error message, use a generic one
+          if (response.status === 500) {
+            return 'The wallet balance check failed. This could be due to the agent wallet not being properly configured or a network issue. Please try again later.';
+          }
+          
+          return `Error: Failed to check balance: ${response.status} ${response.statusText}`;
+        }
+        
+        // Try to parse the JSON response
+        let balanceData;
+        try {
+          balanceData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Error parsing JSON response from swap check balance API:', parseError);
+          return 'Error: Failed to parse the balance check response. Please try again.';
+        }
+        
+        if (!balanceData.success) {
+          return `Error checking balance: ${balanceData.error || 'Unknown error'}`;
+        }
+        
+        if (!balanceData.sufficient) {
+          // Format the error message to be more user-friendly
+          if (balanceData.error && balanceData.error.includes('Insufficient SOL balance')) {
+            // Extract the required and available amounts for a more readable message
+            const match = balanceData.error.match(/Required: ([\d.]+) SOL, Available: ([\d.]+) SOL/);
+            if (match) {
+              const required = match[1];
+              const available = match[2];
+              return `You don't have enough SOL for this swap. You need ${required} SOL but only have ${available} SOL available.`;
+            }
+          }
+          
+          return `Insufficient balance: ${balanceData.error}`;
+        }
+        
+        // If balance is sufficient, return a success message
+        return 'Balance check passed. You have sufficient funds for this swap.';
+      } catch (fetchError) {
+        console.error('Network error checking balance:', fetchError);
+        return `Network error: ${fetchError instanceof Error ? fetchError.message : 'Failed to connect to the server'}. Please check your connection and try again.`;
+      }
+    } catch (error) {
+      console.error('Error checking swap balance:', error);
+      return `Error: ${error instanceof Error ? error.message : 'An unexpected error occurred while checking balance'}`;
     }
   };
 

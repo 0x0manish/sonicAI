@@ -11,6 +11,7 @@ import { getSonicStats, formatSonicStats } from '../lib/stats-utils';
 import { initializeAgentWallet, getAgentWallet, isAgentWalletInitialized } from '../lib/agent-wallet';
 import { AGENT_WALLET_CONFIG, validateWalletConfig, updateWalletConfigFromEnv } from '../lib/wallet-config';
 import { getLiquidityPoolById, formatLiquidityPoolInfo, isValidPoolId, getLiquidityPools, formatLiquidityPoolList } from '../lib/liquidity-pool-utils';
+import { computeSwap, isValidMintAddress, SOL_MINT, solToLamports, lamportsToSol, formatSwapComputation, hasWalletSufficientBalance } from '../lib/swap-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -220,8 +221,14 @@ function stripMarkdown(text: string): string {
   return cleaned;
 }
 
-// Store conversation history for each user
-const userSessions: Record<number, { messages: any[] }> = {};
+// Update the user session interface
+interface UserSession {
+  messages: Array<{ role: string; content: string }>;
+  lastSwapData?: any; // Add this property to fix the linter errors
+}
+
+// Initialize user sessions
+const userSessions: Record<number, UserSession> = {};
 
 // Improved regex for detecting wallet-related queries
 const walletRegex = /(?:your|agent|bot|ai|do you have|what is your|what'?s your).*(?:wallet|address|balance|public key)|(?:testnet|mainnet|devnet).*(?:balance|wallet)|(?:wallet|balance)(?:\?|$)/i;
@@ -310,35 +317,26 @@ bot.command('token-details', async (ctx) => {
   }
 });
 
-// Define the help message
+// Update the help message to include swap command
 const helpMessage = `
-*Sonic Agent Bot Commands*
+*Sonic AI Bot Commands*
 
-*Basic Commands:*
-/start - Start the bot and see welcome message
+/start - Start a conversation with Sonic AI
 /help - Show this help message
-/wallet <address> - Check wallet balance
-/token <mint> - Check token price
+/reset - Reset the conversation history
+/wallet <address> - Check a wallet's balance
+/mywallet - Show the bot's wallet information
+/token <mint> - Check a token's price
 /token-details <mint> - Get detailed information about a token
-/stats - Show Sonic chain statistics
-/faucet <address> - Request test tokens from faucet
-/send <amount> <address> - Send SOL to an address
-/pool <pool_id> - Show information about a specific liquidity pool
+/stats - Show Sonic DEX statistics
+/faucet <address> - Request testnet tokens
+/send <amount> <address> - Send testnet SOL to an address
+/pool <pool_id> - Get information about a liquidity pool
 /pools - List available liquidity pools
-/solsonic - Show information about the SOL-SONIC liquidity pool
+/solsonic - Show SOL-SONIC pool information
+/swap <amount> <from_mint> <to_mint> - Compute a token swap
 
-*You can also ask me about:*
-- Wallet balances: "What's the balance of <address>?"
-- Token prices: "What's the price of <mint>?"
-- Token details: "Show me details for token <mint>"
-- Chain statistics: "Show me the Sonic chain stats"
-- Test tokens: "Send test tokens to <address>"
-- Sending SOL: "Send 0.1 SOL to <address>"
-- Liquidity pools: "Show me info about pool <pool_id>"
-- SOL-SONIC pool: "What's the SOL-SONIC pool info?"
-- List of pools: "Show me available liquidity pools"
-
-*Note:* For security reasons, transactions are only enabled on testnet.
+You can also ask me questions about Sonic, Solana, or crypto in general!
 `;
 
 // Add a help command handler for /help
@@ -812,7 +810,7 @@ bot.hears(/(?:list|show|get|display).*?(?:liquidity pools|pools|lps)/i, async (c
   }
 });
 
-// Handle text messages
+// Update the message handler to handle swap requests
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return;
@@ -823,6 +821,211 @@ bot.on(message('text'), async (ctx) => {
   }
   
   const userMessage = ctx.message.text;
+  
+  // Check if the message is confirming a swap
+  const confirmSwapRegex = /^(?:yes|confirm|execute|proceed|do it|swap it|go ahead)$/i;
+  if (confirmSwapRegex.test(userMessage.trim()) && userSessions[userId].lastSwapData) {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get the last swap data
+      const lastSwapData = userSessions[userId].lastSwapData;
+      
+      // Send a message that we're checking the balance
+      await ctx.reply('Checking your balance before executing the swap...');
+      
+      // Update wallet configuration from environment variables
+      updateWalletConfigFromEnv();
+      
+      // Validate wallet configuration
+      if (!validateWalletConfig()) {
+        console.error('Agent wallet configuration is invalid');
+        await ctx.reply('Sorry, my wallet is not properly configured. Please check with the administrator.');
+        // Clear the swap data
+        delete userSessions[userId].lastSwapData;
+        return;
+      }
+      
+      // Explicitly initialize the wallet if it's not already initialized
+      let agentWallet = getAgentWallet();
+      if (!agentWallet) {
+        console.log('Agent wallet not initialized, initializing now...');
+        agentWallet = initializeAgentWallet(AGENT_WALLET_CONFIG);
+        
+        if (!agentWallet) {
+          console.error('Failed to initialize agent wallet, configuration may be invalid');
+          await ctx.reply('Sorry, I could not initialize my wallet. Please check with the administrator.');
+          // Clear the swap data
+          delete userSessions[userId].lastSwapData;
+          return;
+        }
+        
+        console.log('Agent wallet initialized successfully');
+      }
+      
+      try {
+        const walletAddress = agentWallet.getPublicKey();
+        console.log('Using agent wallet address:', walletAddress);
+        
+        // Check if wallet has sufficient balance
+        const balanceCheck = await hasWalletSufficientBalance(
+          walletAddress,
+          lastSwapData.inputMint,
+          Number(lastSwapData.inputAmount)
+        );
+        
+        if (!balanceCheck.sufficient) {
+          // Format the error message to be more user-friendly
+          let errorMessage = `Insufficient balance: ${balanceCheck.error}`;
+          
+          if (balanceCheck.error && balanceCheck.error.includes('Insufficient SOL balance')) {
+            // Extract the required and available amounts for a more readable message
+            const match = balanceCheck.error.match(/Required: ([\d.]+) SOL, Available: ([\d.]+) SOL/);
+            if (match) {
+              const required = match[1];
+              const available = match[2];
+              errorMessage = `You don't have enough SOL for this swap. You need ${required} SOL but only have ${available} SOL available.`;
+            }
+          }
+          
+          await ctx.reply(errorMessage);
+          // Clear the swap data
+          delete userSessions[userId].lastSwapData;
+          return;
+        }
+        
+        // If balance check passes, show a message that swap execution is not implemented yet
+        await ctx.reply('Balance check passed! You have sufficient funds for this swap.\n\nSwap execution is not implemented yet. In a production environment, this would execute the swap transaction on the blockchain.');
+        
+        // Clear the swap data
+        delete userSessions[userId].lastSwapData;
+        return;
+      } catch (walletError) {
+        console.error('Error getting agent wallet public key or checking balance:', walletError);
+        await ctx.reply('Sorry, there was an error with my wallet. Please try again later.');
+        // Clear the swap data
+        delete userSessions[userId].lastSwapData;
+        return;
+      }
+    } catch (error) {
+      console.error('Error executing swap:', error);
+      await ctx.reply(`Error: ${error instanceof Error ? error.message : 'An error occurred while executing the swap'}`);
+      // Clear the swap data
+      delete userSessions[userId].lastSwapData;
+      return;
+    }
+  }
+  
+  // Check if the message is canceling a swap
+  const cancelSwapRegex = /^(?:no|cancel|stop|abort|don't|do not)$/i;
+  if (cancelSwapRegex.test(userMessage.trim()) && userSessions[userId].lastSwapData) {
+    // Clear the swap data
+    delete userSessions[userId].lastSwapData;
+    await ctx.reply('Swap canceled.');
+    return;
+  }
+  
+  // Check if the message is a swap request
+  const swapRegex = /(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+(?:sol|sonic|usdc|token)\s+(?:to|for)\s+([\w\d]{32,44})/i;
+  const swapMatch = userMessage.match(swapRegex);
+  
+  if (swapMatch && swapMatch[1] && swapMatch[2]) {
+    const amount = parseFloat(swapMatch[1]);
+    const outputMint = swapMatch[2];
+    
+    // Validate output mint
+    if (isValidMintAddress(outputMint)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Convert amount to lamports if input is SOL
+        let amountToUse = amount;
+        if (amount < 1_000_000) {
+          amountToUse = solToLamports(amount);
+        }
+        
+        // Compute the swap
+        const swapResult = await computeSwap({
+          inputMint: SOL_MINT, // Assume input is SOL for now
+          outputMint,
+          amount: amountToUse,
+          slippageBps: 50 // Default slippage of 0.5%
+        });
+        
+        // Format and send the swap details
+        const formattedSwap = formatSwapComputation(swapResult);
+        
+        // Store the swap data in the user's session
+        if (swapResult.success && swapResult.data) {
+          userSessions[userId].lastSwapData = swapResult.data;
+          
+          // Add a prompt to execute the swap
+          const message = `${formattedSwap}\n\nWould you like to execute this swap? Reply with "yes" to proceed or "no" to cancel.`;
+          await ctx.reply(message);
+        } else {
+          await ctx.reply(formattedSwap);
+        }
+        return;
+      } catch (error) {
+        console.error('Error computing swap:', error);
+        await ctx.reply(`Error: ${error instanceof Error ? error.message : 'An error occurred while computing the swap'}`);
+        return;
+      }
+    }
+  }
+  
+  // Check if the message is a swap request with two token addresses
+  const swapTokensRegex = /(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+([\w\d]{32,44})\s+(?:to|for)\s+([\w\d]{32,44})/i;
+  const swapTokensMatch = userMessage.match(swapTokensRegex);
+  
+  if (swapTokensMatch && swapTokensMatch[1] && swapTokensMatch[2] && swapTokensMatch[3]) {
+    const amount = parseFloat(swapTokensMatch[1]);
+    const inputMint = swapTokensMatch[2];
+    const outputMint = swapTokensMatch[3];
+    
+    // Validate mint addresses
+    if (isValidMintAddress(inputMint) && isValidMintAddress(outputMint)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Convert amount to lamports if input is SOL
+        let amountToUse = amount;
+        if (inputMint === SOL_MINT && amount < 1_000_000) {
+          amountToUse = solToLamports(amount);
+        }
+        
+        // Compute the swap
+        const swapResult = await computeSwap({
+          inputMint,
+          outputMint,
+          amount: amountToUse,
+          slippageBps: 50 // Default slippage of 0.5%
+        });
+        
+        // Format and send the swap details
+        const formattedSwap = formatSwapComputation(swapResult);
+        
+        // Store the swap data in the user's session
+        if (swapResult.success && swapResult.data) {
+          userSessions[userId].lastSwapData = swapResult.data;
+          
+          // Add a prompt to execute the swap
+          const message = `${formattedSwap}\n\nWould you like to execute this swap? Reply with "yes" to proceed or "no" to cancel.`;
+          await ctx.reply(message);
+        } else {
+          await ctx.reply(formattedSwap);
+        }
+        return;
+      } catch (error) {
+        console.error('Error computing swap:', error);
+        await ctx.reply(`Error: ${error instanceof Error ? error.message : 'An error occurred while computing the swap'}`);
+        return;
+      }
+    }
+  }
   
   // Check if the message is a wallet address (direct address)
   if (isValidSonicAddress(userMessage)) {
@@ -1439,5 +1642,75 @@ bot.hears(/(?:sol[\s-]sonic|wsol[\s-]sonic).*?(?:pool|lp|liquidity|pair)/i, asyn
   } catch (error) {
     console.error('Error handling SOL-SONIC pool message:', error);
     await ctx.reply('Sorry, there was an error fetching the SOL-SONIC liquidity pool data. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
+// Add a swap command
+bot.command('swap', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  
+  // Check if we have enough arguments
+  if (args.length < 4) {
+    return ctx.reply('Please provide the amount, input mint, and output mint. Usage: /swap <amount> <from_mint> <to_mint>');
+  }
+  
+  const amount = parseFloat(args[1]);
+  const inputMint = args[2].trim();
+  const outputMint = args[3].trim();
+  
+  // Validate amount
+  if (isNaN(amount) || amount <= 0) {
+    return ctx.reply('Please provide a valid amount greater than 0.');
+  }
+  
+  // Validate mint addresses
+  if (!isValidMintAddress(inputMint)) {
+    return ctx.reply('Invalid input mint address. Please provide a valid Solana token mint address.');
+  }
+  
+  if (!isValidMintAddress(outputMint)) {
+    return ctx.reply('Invalid output mint address. Please provide a valid Solana token mint address.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Convert amount to lamports if input is SOL
+    let amountToUse = amount;
+    if (inputMint === SOL_MINT && amount < 1_000_000) {
+      amountToUse = solToLamports(amount);
+    }
+    
+    // Compute the swap
+    const swapResult = await computeSwap({
+      inputMint,
+      outputMint,
+      amount: amountToUse,
+      slippageBps: 50 // Default slippage of 0.5%
+    });
+    
+    // Format and send the swap details
+    const formattedSwap = formatSwapComputation(swapResult);
+    
+    // Store the swap data in the user's session
+    if (swapResult.success && swapResult.data) {
+      const userId = ctx.from?.id;
+      if (userId) {
+        if (!userSessions[userId]) {
+          userSessions[userId] = { messages: [] };
+        }
+        userSessions[userId].lastSwapData = swapResult.data;
+      }
+      
+      // Add a prompt to execute the swap
+      const message = `${formattedSwap}\n\nWould you like to execute this swap? Reply with "yes" to proceed or "no" to cancel.`;
+      await ctx.reply(message);
+    } else {
+      await ctx.reply(formattedSwap);
+    }
+  } catch (error) {
+    console.error('Error computing swap:', error);
+    await ctx.reply(`Error: ${error instanceof Error ? error.message : 'An error occurred while computing the swap'}`);
   }
 }); 

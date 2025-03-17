@@ -19,6 +19,7 @@
     "ai": "^4.1.61",
     "bs58": "^6.0.0",
     "dotenv": "^16.4.7",
+    "module-alias": "^2.2.3",
     "next": "15.2.2",
     "openai": "^4.87.3",
     "react": "^19.0.0",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/module-alias": "^2.0.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
