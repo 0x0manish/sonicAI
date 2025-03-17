@@ -1,4 +1,5 @@
 import { AgentWalletConfig } from './agent-wallet';
+import bs58 from 'bs58';
 
 /**
  * Agent wallet configuration
@@ -29,6 +30,11 @@ export function updateWalletConfigFromEnv(): void {
   AGENT_WALLET_CONFIG.rpcUrl = rpcUrl;
   AGENT_WALLET_CONFIG.testnetRpcUrl = testnetRpcUrl;
   
+  // Validate the configuration immediately after updating
+  if (!validateWalletConfig()) {
+    console.error('Warning: Wallet configuration is invalid after environment update');
+  }
+  
   console.log('Wallet configuration updated from environment variables');
 }
 
@@ -40,21 +46,35 @@ export function validateWalletConfig(): boolean {
   let isValid = true;
   const errors = [];
 
-  // Check if private key is set
+  // Check if private key is set and valid
   if (!AGENT_WALLET_CONFIG.privateKey) {
     console.error('Agent wallet private key is not set. Set the AGENT_WALLET_PRIVATE_KEY environment variable.');
     errors.push('Private key is missing');
     isValid = false;
-  } else if (AGENT_WALLET_CONFIG.privateKey.length < 32) {
-    console.error('Agent wallet private key appears to be invalid (too short).');
-    errors.push('Private key is invalid (too short)');
-    isValid = false;
+  } else {
+    try {
+      // Try to decode the private key to validate its format
+      const privateKeyBytes = bs58.decode(AGENT_WALLET_CONFIG.privateKey);
+      if (privateKeyBytes.length !== 64) {
+        console.error('Agent wallet private key is invalid (incorrect length).');
+        errors.push('Private key is invalid (incorrect length)');
+        isValid = false;
+      }
+    } catch (error) {
+      console.error('Agent wallet private key is invalid (not valid base58).');
+      errors.push('Private key is invalid (not valid base58)');
+      isValid = false;
+    }
   }
 
-  // Check if RPC URLs are set
+  // Check if RPC URLs are set and valid
   if (!AGENT_WALLET_CONFIG.rpcUrl) {
     console.error('Mainnet RPC URL is not set. Set the SONIC_RPC_URL environment variable.');
     errors.push('Mainnet RPC URL is missing');
+    isValid = false;
+  } else if (!AGENT_WALLET_CONFIG.rpcUrl.startsWith('http')) {
+    console.error('Mainnet RPC URL is invalid (must start with http/https).');
+    errors.push('Mainnet RPC URL is invalid');
     isValid = false;
   }
 
@@ -62,6 +82,10 @@ export function validateWalletConfig(): boolean {
     console.warn('Testnet RPC URL is not set. Set the SONIC_TESTNET_RPC_URL environment variable for testnet functionality.');
     errors.push('Testnet RPC URL is missing (optional)');
     // Not marking as invalid since testnet is optional
+  } else if (!AGENT_WALLET_CONFIG.testnetRpcUrl.startsWith('http')) {
+    console.error('Testnet RPC URL is invalid (must start with http/https).');
+    errors.push('Testnet RPC URL is invalid');
+    isValid = false;
   }
 
   // Log validation result
