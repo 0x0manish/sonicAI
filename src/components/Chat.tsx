@@ -10,6 +10,7 @@ import { formatSonicStats } from '@/lib/stats-utils';
 import { isValidPoolId, formatLiquidityPoolList } from '@/lib/liquidity-pool-utils';
 import { validateAIConfig } from '@/lib/ai-config';
 import { getEnvVars, logEnvVars } from '@/lib/env-utils';
+import Image from 'next/image';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
@@ -1044,6 +1045,18 @@ export default function Chat() {
       <div className="flex flex-col h-full">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center p-6">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-full overflow-hidden">
+                <Image 
+                  src="/logo.jpeg" 
+                  alt="Sonic AI" 
+                  width={64} 
+                  height={64} 
+                  className="object-cover"
+                  priority
+                />
+              </div>
+            </div>
             <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-white">Welcome to Sonic AI</h2>
             <p className="text-gray-600 dark:text-gray-300 mb-4">
               Your guide to the first atomic SVM chain for sovereign economies

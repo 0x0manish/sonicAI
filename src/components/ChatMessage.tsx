@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import Image from 'next/image';
 
 // Add custom styles for markdown content
 const markdownStyles = `
@@ -204,8 +205,15 @@ export default function ChatMessage({ message }: ChatMessageProps) {
               <UserIcon className="w-3.5 h-3.5 text-gray-700 dark:text-gray-300" />
             </div>
           ) : (
-            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center">
-              {/* Empty icon for Sonic AI */}
+            <div className="w-6 h-6 rounded-full overflow-hidden">
+              <Image 
+                src="/logo.jpeg" 
+                alt="Sonic AI" 
+                width={24} 
+                height={24} 
+                className="object-cover"
+                priority
+              />
             </div>
           )}
         </div>

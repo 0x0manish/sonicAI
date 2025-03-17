@@ -290,33 +290,24 @@ export function formatTokenDetails(tokenResponse: TokenDetailsResponse): string 
   const token = tokenResponse.data[0];
   
   try {
-    // Create a formatted message with token information
+    // Create a formatted message with token information using a more structured layout
     let message = `## ${token.name} (${token.symbol}) Token Details\n\n`;
     
-    // Add token information
-    message += `**Symbol:** ${token.symbol}\n`;
-    message += `**Name:** ${token.name}\n`;
-    message += `**Decimals:** ${token.decimals}\n\n`;
-    
-    // Add addresses
-    message += `**Mint Address:** \`${token.address}\`\n`;
-    message += `**Program ID:** \`${token.programId}\`\n\n`;
-    
-    // Add chain information
-    message += `**Chain ID:** ${token.chainId}\n\n`;
-    
-    // Add logo if available
-    if (token.logoURI) {
-      message += `**Logo:** [View Logo](${token.logoURI})\n\n`;
-    }
+    // Create a visually balanced layout with consistent formatting
+    // Using a table-like structure for better alignment
+    message += `| Property     | Value                                              |\n`;
+    message += `| ------------ | -------------------------------------------------- |\n`;
+    message += `| **Symbol**   | ${token.symbol}                                    |\n`;
+    message += `| **Name**     | ${token.name}                                      |\n`;
+    message += `| **Decimals** | ${token.decimals}                                  |\n`;
+    message += `| **Chain ID** | ${token.chainId}                                   |\n`;
+    message += `| **Mint**     | ${token.address}                                   |\n`;
+    message += `| **Program**  | ${token.programId}                                 |\n`;
     
     // Add tags if available
     if (token.tags && token.tags.length > 0) {
-      message += `**Tags:** ${token.tags.join(', ')}\n\n`;
+      message += `\n**Tags:** ${token.tags.join(', ')}`;
     }
-    
-    // Add link to view on Sega DEX
-    message += `You can view this token on [Sega DEX](https://sega.so/token/${token.address} "Open in new tab")`;
     
     return message;
   } catch (error) {

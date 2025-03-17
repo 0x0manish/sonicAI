@@ -1,5 +1,6 @@
 import React from 'react';
 import Chat from '@/components/Chat';
+import Image from 'next/image';
 
 export default function Home() {
   return (
@@ -10,8 +11,15 @@ export default function Home() {
           {/* Chat header */}
           <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="px-4 py-4 flex items-center">
-              <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center shadow-sm mr-3">
-                {/* Empty icon for Sonic AI */}
+              <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center shadow-sm mr-3">
+                <Image 
+                  src="/logo.jpeg" 
+                  alt="Sonic AI" 
+                  width={28} 
+                  height={28} 
+                  className="object-cover"
+                  priority
+                />
               </div>
               <div>
                 <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Sonic AI</h1>
