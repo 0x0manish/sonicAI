@@ -1073,605 +1073,108 @@ bot.on(message('text'), async (ctx) => {
     await ctx.sendChatAction('typing');
     
     try {
-      // Check if the message is asking for token details
-      const isDetailsQuery = /(?:details|info|information|data)/i.test(ctx.message.text);
+      // First, try to get token details
+      console.log('Fetching token details for direct mint address:', userMessage);
       
-      if (isDetailsQuery) {
-        console.log('Fetching token details for direct mint address:', userMessage);
-        
-        // Send an initial message to the user
-        const initialMessage = await ctx.reply(`Fetching token details for ${userMessage}...`);
-        
-        // Get token details
-        const tokenResponse = await getTokenDetails(userMessage);
-        
-        console.log(`Token details response for ${userMessage}:`, 
-          `success: ${tokenResponse.success}`, 
-          `error: ${tokenResponse.error || 'none'}`,
-          `data length: ${tokenResponse.data?.length || 0}`
-        );
-        
-        // Format and send the details
+      // Send an initial message
+      const initialMessage = await ctx.reply(`I found a token mint address. Fetching information...`);
+      
+      // Get token details
+      const tokenResponse = await getTokenDetails(userMessage);
+      
+      // If successful, show token details
+      if (tokenResponse.success && tokenResponse.data && tokenResponse.data.length > 0) {
         const formattedDetails = formatTokenDetails(tokenResponse);
         
-        // Edit the initial message with the details
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          initialMessage.message_id,
-          undefined,
-          formattedDetails,
-          { parse_mode: 'Markdown' }
-        );
-      } else {
-        // Get token price
-        const priceResponse = await getTokenPrices([userMessage]);
-        
-        // Format and send the price
-        const formattedPrice = formatTokenPrices(priceResponse, [userMessage]);
-        await ctx.reply(formattedPrice);
-      }
-      return;
-    } catch (error) {
-      console.error('Error fetching token information:', error);
-      await ctx.reply(`Sorry, there was an error fetching the token information: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`);
-      return;
-    }
-  }
-  
-  // Check if the message is asking to check a wallet balance
-  const walletCheckRegex = /(?:check|view|show|get|what(?:'|')?s|what is).*(?:wallet|balance|account).*?([\w\d]{32,44})/i;
-  const walletMatch = userMessage.match(walletCheckRegex);
-  
-  if (walletMatch && walletMatch[1]) {
-    const address = walletMatch[1].trim();
-    
-    // Validate wallet address
-    if (isValidSonicAddress(address)) {
-      // Show typing indicator
-      await ctx.sendChatAction('typing');
-      
-      try {
-        // Get wallet balance
-        const balance = await getSonicWalletBalance(address);
-        
-        // Format and send the balance
-        const formattedBalance = formatWalletBalance(balance);
-        await ctx.reply(`Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\n${formattedBalance}`);
-        return;
-      } catch (error) {
-        console.error('Error fetching wallet balance:', error);
-        await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
-        return;
-      }
-    }
-  }
-  
-  // Check if the message is asking for token details
-  const tokenDetailsRegex = /(?:show|get|display|what(?:'|')?s|what is|tell me about).*?(?:token|mint).*?(?:details|info|information|data).*?([\w\d]{32,44})|(?:details|info|information|data).*?(?:for|about).*?(?:token|mint).*?([\w\d]{32,44})|(?:token|mint).*?([\w\d]{32,44}).*?(?:details|info|information|data)/i;
-  const tokenDetailsMatch = userMessage.match(tokenDetailsRegex);
-  
-  if (tokenDetailsMatch) {
-    // Get the mint address from any of the capture groups
-    const mintAddress = (tokenDetailsMatch[1] || tokenDetailsMatch[2] || tokenDetailsMatch[3] || '').trim();
-    
-    // Validate mint address - but allow the specific SONIC token address
-    const isSonicToken = mintAddress === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
-    if ((mintAddress && isValidTokenMint(mintAddress)) || isSonicToken) {
-      // Show typing indicator
-      await ctx.sendChatAction('typing');
-      
-      try {
-        console.log('Fetching token details for:', mintAddress);
-        
-        // Send an initial message to the user
-        const initialMessage = await ctx.reply(`Fetching token details for ${mintAddress}...`);
-        
-        // Get token details
-        const tokenResponse = await getTokenDetails(mintAddress);
-        
-        console.log(`Token details response for ${mintAddress}:`, 
-          `success: ${tokenResponse.success}`, 
-          `error: ${tokenResponse.error || 'none'}`,
-          `data length: ${tokenResponse.data?.length || 0}`
-        );
-        
-        // Format and send the details
-        const formattedDetails = formatTokenDetails(tokenResponse);
-        
-        // Edit the initial message with the details
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          initialMessage.message_id,
-          undefined,
-          formattedDetails,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      } catch (error) {
-        console.error('Error fetching token details:', error);
-        await ctx.reply(`Sorry, there was an error fetching the token details: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`);
-        return;
-      }
-    }
-  }
-  
-  // Check if the message is asking for token price
-  const tokenPriceRegex = /(?:price|cost|value|worth|how much).*(?:token|mint|coin).*?([\w\d]{32,44})/i;
-  const tokenPriceMatch = userMessage.match(tokenPriceRegex);
-  
-  if (tokenPriceMatch && tokenPriceMatch[1]) {
-    const mint = tokenPriceMatch[1].trim();
-    
-    // Validate token mint address
-    if (isValidTokenMint(mint)) {
-      // Show typing indicator
-      await ctx.sendChatAction('typing');
-      
-      try {
-        // Get token price
-        const priceResponse = await getTokenPrices([mint]);
-        
-        // Format and send the price
-        const formattedPrice = formatTokenPrices(priceResponse, [mint]);
-        await ctx.reply(formattedPrice);
-        return;
-      } catch (error) {
-        console.error('Error fetching token price:', error);
-        await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
-        return;
-      }
-    }
-  }
-  
-  // Check if the message is asking for Sonic chain stats
-  const statsRegex = /(?:stats|statistics|tvl|volume|locked value|total value|chain stats)/i;
-  if (statsRegex.test(userMessage)) {
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
-    
-    try {
-      // Get Sonic chain stats
-      const stats = await getSonicStats();
-      
-      // Format and send the stats
-      const formattedStats = formatSonicStats(stats);
-      await ctx.reply(formattedStats);
-      return;
-    } catch (error) {
-      console.error('Error fetching Sonic chain stats:', error);
-      await ctx.reply('Sorry, there was an error fetching Sonic chain stats. Please try again later.');
-      return;
-    }
-  }
-  
-  // Check if the message is asking for the agent's wallet info
-  // Log the message and regex match for debugging
-  console.log('Message:', userMessage);
-  console.log('Matches wallet regex:', walletRegex.test(userMessage));
-  console.log('Wallet status:', {
-    initialized: agentWalletInitialized,
-    available: isAgentWalletInitialized()
-  });
-  
-  if (walletRegex.test(userMessage)) {
-    console.log('Wallet-related query detected');
-    
-    // Check if agent wallet is initialized
-    if (!agentWalletInitialized) {
-      console.log('Wallet not initialized, sending error message');
-      return ctx.reply('Sorry, my wallet is not properly configured. Please try again later.');
-    }
-    
-    const wallet = getAgentWallet();
-    if (!wallet) {
-      console.error('Wallet is null despite being marked as initialized');
-      agentWalletInitialized = false;
-      return ctx.reply('Sorry, there was an error accessing my wallet. Please try again later.');
-    }
-    
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
-    
-    try {
-      const publicKey = wallet.getPublicKey();
-      const networkInfo = wallet.getNetworkInfo();
-      const mainnetBalance = await wallet.getBalance();
-      const testnetBalance = await wallet.getTestnetBalance();
-      
-      // Check if asking specifically about testnet/devnet balance
-      const isTestnetQuery = /(?:testnet|devnet).*(?:balance|wallet)/i.test(userMessage);
-      const isMainnetQuery = /(?:mainnet).*(?:balance|wallet)/i.test(userMessage);
-      const isAddressQuery = /(?:address|public key)/i.test(userMessage);
-      
-      if (isTestnetQuery) {
-        // Just show testnet balance
-        let message = `🔑 My Wallet Information\n\n`;
-        message += `Public Key: ${publicKey}\n\n`;
-        message += `Network: ${networkInfo.network}\n\n`;
-        
-        if (testnetBalance !== null) {
-          message += `Testnet Balance: ${testnetBalance.toFixed(4)} SOL\n\n`;
-        } else {
-          message += `Testnet Balance: Unable to retrieve\n\n`;
-        }
-        
-        message += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
-        await ctx.reply(message);
-      } else if (isMainnetQuery) {
-        // Just show mainnet balance
-        let message = `🔑 My Wallet Information\n\n`;
-        message += `Public Key: ${publicKey}\n\n`;
-        message += `Network: ${networkInfo.network}\n\n`;
-        message += `Mainnet Balance: ${mainnetBalance.toFixed(4)} SOL\n\n`;
-        message += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
-        await ctx.reply(message);
-      } else if (isAddressQuery) {
-        // Just show wallet address
-        let message = `🔑 My Wallet Information\n\n`;
-        message += `Public Key: ${publicKey}\n\n`;
-        message += `Network: ${networkInfo.network}\n\n`;
-        message += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
-        await ctx.reply(message);
-      } else {
-        // Format and send the full wallet information
-        let message = `🔑 My Wallet Information\n\n`;
-        message += `Public Key: ${publicKey}\n\n`;
-        message += `Network: ${networkInfo.network}\n\n`;
-        message += `Mainnet Balance: ${mainnetBalance.toFixed(4)} SOL\n\n`;
-        
-        if (testnetBalance !== null) {
-          message += `Testnet Balance: ${testnetBalance.toFixed(4)} SOL\n\n`;
-        }
-        
-        message += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
-        
-        await ctx.reply(message);
-      }
-      return;
-    } catch (error) {
-      console.error('Error getting wallet information:', error);
-      return ctx.reply('Sorry, there was an error retrieving my wallet information. Please try again later.');
-    }
-  }
-  
-  // Check if the message is a transaction request
-  const specificTransactionRegex = /send\s+(\d+(\.\d+)?)\s+sol\s+to\s+([a-zA-Z0-9]{32,44})/i;
-  const specificMatch = userMessage.match(specificTransactionRegex);
-  
-  if (specificMatch && specificMatch[1] && specificMatch[3]) {
-    const amount = parseFloat(specificMatch[1].trim());
-    const recipient = specificMatch[3].trim();
-    
-    // Validate wallet address
-    if (isValidSonicAddress(recipient)) {
-      // Check if agent wallet is initialized
-      if (!agentWalletInitialized) {
-        await ctx.reply('Sorry, my wallet is not properly configured. Transactions are currently unavailable.');
-        return;
-      }
-      
-      const agentWallet = getAgentWallet();
-      if (!agentWallet) {
-        await ctx.reply('Sorry, the agent wallet is not properly configured. Transactions are currently unavailable.');
-        return;
-      }
-      
-      // Show typing indicator
-      await ctx.sendChatAction('typing');
-      
-      try {
-        // Get wallet information
-        const balance = await agentWallet.getBalance();
-        const networkInfo = agentWallet.getNetworkInfo();
-        
-        // Check if wallet has enough balance
-        if (balance < amount) {
-          await ctx.reply(`Insufficient balance. Current balance: ${balance.toFixed(4)} SOL`);
-          return;
-        }
-        
-        // Prevent sending on mainnet
-        if (!networkInfo.isTestnet) {
-          await ctx.reply(`For security reasons, I can only send SOL on testnet, not on mainnet. Current network: ${networkInfo.network}`);
-          return;
-        }
-        
-        // Show wallet info before sending transaction
-        const walletInfoMessage = `🔑 My Wallet Information\n\n` +
-          `Public Key: ${agentWallet.getPublicKey()}\n\n` +
-          `Network: ${networkInfo.network}\n\n` +
-          `Testnet Balance: ${balance.toFixed(4)} SOL\n\n` +
-          `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet.`;
-        await ctx.reply(walletInfoMessage);
-        
-        // Send transaction
-        const result = await agentWallet.sendSol(recipient, amount);
-        
-        // Format and send the result
-        if (!result.success) {
-          await ctx.reply(`Sorry, the transaction failed. ${result.error}`);
-        } else {
-          const transactionMessage = `✅ Transaction Successful!\n\n` +
-            `Amount: ${amount} SOL\n\n` +
-            `Recipient: ${recipient}\n\n` +
-            `Transaction ID: ${result.signature}\n\n` +
-            `Network: ${networkInfo.network}`;
-          await ctx.reply(transactionMessage);
-        }
-        return;
-      } catch (error) {
-        console.error('Error sending transaction:', error);
-        await ctx.reply('Sorry, there was an error processing the transaction. Please try again later.');
-        return;
-      }
-    }
-  } else if (transactionRegex.test(userMessage) && !specificMatch) {
-    // Handle general transaction requests
-    if (!agentWalletInitialized) {
-      await ctx.reply('Sorry, my wallet is not properly configured. I cannot send transactions at this time.');
-      return;
-    }
-    
-    await ctx.reply('I can send SOL for you! Please use the format: "Send X SOL to ADDRESS"\n\n' +
-      'For example: "Send 0.1 SOL to 8xiv9G1gYEXcWcwg9YVgbCUeEPB4XbRSr6WDwJGTXNDU"');
-    return;
-  }
-  
-  // Check if the message is a liquidity pool ID (direct ID)
-  if (isValidPoolId(userMessage)) {
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
-    
-    try {
-      // Get liquidity pool information
-      const poolData = await getLiquidityPoolById(userMessage);
-      
-      // Format and send the information
-      const formattedInfo = formatLiquidityPoolInfo(poolData);
-      await ctx.reply(formattedInfo);
-      return;
-    } catch (error) {
-      console.error('Error fetching liquidity pool information:', error);
-      await ctx.reply('Sorry, there was an error fetching the liquidity pool information. Please try again later.');
-      return;
-    }
-  }
-  
-  // Check if the message is asking for liquidity pool information
-  const poolRegex = /(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i;
-  const poolMatch = userMessage.match(poolRegex);
-  
-  // Check for SOL-SONIC pool specifically
-  const solSonicRegex = /(?:sol[\s-]sonic|wsol[\s-]sonic).*?(?:pool|lp|liquidity|pair)/i;
-  
-  // Check for liquidity pool listing request
-  const poolListRegex = /(?:list|show|get|display|view|all).*?(?:liquidity pools|pools|lps|pairs|available pools)/i;
-  
-  if (poolMatch && poolMatch[1]) {
-    const poolId = poolMatch[1].trim();
-    
-    // Validate pool ID
-    if (isValidPoolId(poolId)) {
-      // Show typing indicator
-      await ctx.sendChatAction('typing');
-      
-      try {
-        // Get liquidity pool information
-        const poolData = await getLiquidityPoolById(poolId);
-        
-        // Format and send the information
-        const formattedInfo = formatLiquidityPoolInfo(poolData);
-        await ctx.reply(formattedInfo);
-        return;
-      } catch (error) {
-        console.error('Error fetching liquidity pool information:', error);
-        await ctx.reply('Sorry, there was an error fetching the liquidity pool information. Please try again later.');
-        return;
-      }
-    }
-  } else if (solSonicRegex.test(userMessage)) {
-    // SOL-SONIC pool ID
-    const poolId = 'DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4';
-    
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
-    
-    try {
-      // Get liquidity pool information
-      const poolData = await getLiquidityPoolById(poolId);
-      
-      // Format and send the information
-      const formattedInfo = formatLiquidityPoolInfo(poolData);
-      await ctx.reply(formattedInfo);
-      return;
-    } catch (error) {
-      console.error('Error fetching SOL-SONIC pool information:', error);
-      await ctx.reply('Sorry, there was an error fetching the SOL-SONIC liquidity pool data. The service might be temporarily unavailable. Please try again later.');
-      return;
-    }
-  } else if (poolListRegex.test(userMessage)) {
-    // User is asking for a list of pools
-    
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
-    
-    try {
-      // Use fixed values for page and pageSize as requested
-      const page = 1;
-      const pageSize = 10;
-      
-      // Get liquidity pools with fixed values
-      console.log('Fetching liquidity pools from Sega API');
-      const poolsData = await getLiquidityPools();
-      
-      // Format and send the information
-      const formattedInfo = formatLiquidityPoolList(poolsData);
-      await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
-      return;
-    } catch (error) {
-      console.error('Error fetching liquidity pools:', error);
-      await ctx.reply('Sorry, there was an error fetching the liquidity pools. Please try again later.');
-      return;
-    }
-  }
-  
-  // Add user message to session
-  userSessions[userId].messages.push({
-    role: 'user',
-    content: userMessage,
-  });
-  
-  // Show typing indicator
-  await ctx.sendChatAction('typing');
-  
-  try {
-    // Ensure the system prompt is included
-    const fullMessages = [
-      { role: 'system', content: SONIC_AI_SYSTEM_PROMPT },
-      ...userSessions[userId].messages.filter(msg => msg.role !== 'system')
-    ];
-    
-    // Create a streaming response
-    const stream = await openai.chat.completions.create({
-      model: process.env.AI_MODEL || 'gpt-4o-mini',
-      messages: fullMessages as any,
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: true,
-    });
-
-    console.log('Using AI model:', process.env.AI_MODEL || 'gpt-4o-mini');
-
-    let sentMessage: any = null;
-    let accumulatedResponse = '';
-    let lastUpdateTime = Date.now();
-    const updateInterval = 1000; // Update message every 1 second
-
-    // Process the stream
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        accumulatedResponse += content;
-        
-        // Update the message periodically to show streaming effect
-        const currentTime = Date.now();
-        if (!sentMessage || (currentTime - lastUpdateTime > updateInterval)) {
-          // Keep showing typing indicator between updates
-          await ctx.sendChatAction('typing');
-          
-          // Strip any markdown formatting from the response
-          const cleanedResponse = stripMarkdown(accumulatedResponse);
-          
-          if (sentMessage) {
-            // Update existing message with plain text
-            try {
-              await ctx.telegram.editMessageText(
-                ctx.chat.id,
-                sentMessage.message_id,
-                undefined,
-                cleanedResponse,
-                { 
-                  link_preview_options: { is_disabled: true }
-                }
-              );
-            } catch (error: any) {
-              // If message is too long or hasn't changed (Telegram API limitation)
-              console.log('Edit message error (expected):', error.message);
-            }
-          } else {
-            // Send first message with plain text
-            sentMessage = await ctx.reply(cleanedResponse, {
-              link_preview_options: { is_disabled: true }
-            });
-          }
-          
-          lastUpdateTime = currentTime;
-        }
-      }
-    }
-    
-    // Ensure final message is sent/updated
-    if (accumulatedResponse) {
-      // Strip any markdown formatting from the final response
-      const cleanedResponse = stripMarkdown(accumulatedResponse);
-      
-      if (sentMessage) {
+        // Now also fetch the price
         try {
+          const priceResponse = await getTokenPrices([userMessage]);
+          
+          // If price is available, append it to the details
+          if (priceResponse.success && Object.keys(priceResponse.prices).length > 0) {
+            const price = priceResponse.prices[userMessage];
+            const token = tokenResponse.data[0];
+            
+            // Format the combined response
+            let combinedResponse = formattedDetails;
+            combinedResponse += `\n\n**Current Price:** $${Number(price).toFixed(4)} USD`;
+            
+            // Edit the initial message with the combined response
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              initialMessage.message_id,
+              undefined,
+              combinedResponse,
+              { parse_mode: 'Markdown' }
+            );
+          } else {
+            // Just show the details if price is not available
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              initialMessage.message_id,
+              undefined,
+              formattedDetails + "\n\n*Price information is not available for this token.*",
+              { parse_mode: 'Markdown' }
+            );
+          }
+        } catch (priceError) {
+          console.error('Error fetching token price:', priceError);
+          
+          // Just show the details if there's an error getting the price
           await ctx.telegram.editMessageText(
             ctx.chat.id,
-            sentMessage.message_id,
+            initialMessage.message_id,
             undefined,
-            cleanedResponse,
-            { 
-              link_preview_options: { is_disabled: true }
-            }
+            formattedDetails + "\n\n*Price information is not available for this token.*",
+            { parse_mode: 'Markdown' }
           );
-        } catch (error: any) {
-          // If message is too long or hasn't changed
-          console.log('Final edit message error (expected):', error.message);
         }
       } else {
-        await ctx.reply(cleanedResponse, {
-          link_preview_options: { is_disabled: true }
-        });
-      }
-      
-      // Add AI response to session
-      userSessions[userId].messages.push({
-        role: 'assistant',
-        content: accumulatedResponse,
-      });
-    }
-  } catch (error: any) {
-    console.error('Error generating response:', error);
-    await ctx.reply('Sorry, I encountered an error. Please try again later.');
-  }
-});
-
-// Error handling
-bot.catch((err, ctx) => {
-  console.error(`Error for ${ctx.updateType}:`, err);
-  ctx.reply('An error occurred while processing your request. Please try again later.');
-});
-
-// Start the bot
-console.log('Starting Telegram bot...');
-bot.launch();
-
-// Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-// Handle messages that might be asking about liquidity pools
-bot.hears(/(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i, async (ctx) => {
-  try {
-    const match = ctx.message.text.match(/(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i);
-    if (match && match[1]) {
-      const poolId = match[1].trim();
-      
-      // Validate pool ID
-      if (isValidPoolId(poolId)) {
-        // Show typing indicator
-        await ctx.sendChatAction('typing');
-        
-        // Fetch pool information
-        console.log(`Fetching liquidity pool data for: ${poolId}`);
-        const poolData = await getLiquidityPoolById(poolId);
-        
-        if (!poolData.success || !poolData.data) {
-          console.error('Failed to fetch liquidity pool data:', poolData.error);
-          await ctx.reply(`I couldn't find information for the liquidity pool with ID: ${poolId}. ${poolData.error || 'This pool may not exist or might not be available on Sega DEX.'}`);
-          return;
+        // If token details failed, try to get just the price
+        try {
+          const priceResponse = await getTokenPrices([userMessage]);
+          
+          if (priceResponse.success && Object.keys(priceResponse.prices).length > 0) {
+            const formattedPrice = formatTokenPrices(priceResponse, [userMessage]);
+            
+            // Edit the initial message with the price
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              initialMessage.message_id,
+              undefined,
+              formattedPrice,
+              { parse_mode: 'Markdown' }
+            );
+          } else {
+            // Neither details nor price available
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              initialMessage.message_id,
+              undefined,
+              `I couldn't find any information for the token with mint address ${userMessage}.`,
+              { parse_mode: 'Markdown' }
+            );
+          }
+        } catch (priceError) {
+          console.error('Error fetching token price:', priceError);
+          
+          // Neither details nor price available due to error
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            initialMessage.message_id,
+            undefined,
+            `I couldn't find any information for the token with mint address ${userMessage}. The service might be temporarily unavailable.`,
+            { parse_mode: 'Markdown' }
+          );
         }
-        
-        // Format and send the pool information
-        const formattedInfo = formatLiquidityPoolInfo(poolData);
-        await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
       }
+      
+      return;
+    } catch (error) {
+      console.error('Error handling token mint address:', error);
+      await ctx.reply(`Error: ${error instanceof Error ? error.message : 'An error occurred while fetching token information'}`);
+      return;
     }
-  } catch (error) {
-    console.error('Error handling liquidity pool message:', error);
-    await ctx.reply('Sorry, there was an error fetching the liquidity pool data. The service might be temporarily unavailable. Please try again later.');
   }
 });
 

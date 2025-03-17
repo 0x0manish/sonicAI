@@ -1,7 +1,7 @@
-import startBot from '../bot';
-import dotenv from 'dotenv';
-import path from 'path';
-import fs from 'fs';
+// Load environment variables first
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -27,6 +27,23 @@ if (!process.env.OPENAI_API_KEY) {
   console.error('Please set it in your .env.local file and try again.');
   process.exit(1);
 }
+
+// Log the token for debugging (masked)
+console.log('TELEGRAM_BOT_TOKEN exists:', !!process.env.TELEGRAM_BOT_TOKEN);
+if (process.env.TELEGRAM_BOT_TOKEN) {
+  console.log('TELEGRAM_BOT_TOKEN (masked):', '****' + process.env.TELEGRAM_BOT_TOKEN.slice(-4));
+}
+
+// Register module aliases before importing any modules
+import moduleAlias from 'module-alias';
+
+// Register the @ alias to point to the src directory
+moduleAlias.addAliases({
+  '@': path.join(__dirname, '..')
+});
+
+// Now import the bot
+import startBot from '../bot';
 
 // Start the bot
 console.log('Starting Sonic AI Telegram bot...');

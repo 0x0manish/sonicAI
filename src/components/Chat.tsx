@@ -190,90 +190,176 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
-      // Direct check for token price request for SONIC token
-      const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+      // Check if the message contains a token mint address
+      // Base58 regex pattern for Solana addresses
+      const mintAddressRegex = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
+      const mintAddresses = content.match(mintAddressRegex);
       
-      // Check if the message is directly asking for SONIC token price or contains the SONIC mint address
-      if (content.trim() === SONIC_MINT || 
-          content.toLowerCase().includes('price') && content.includes(SONIC_MINT) ||
-          content.toLowerCase().includes('price of sonic')) {
-        console.log('SONIC token price request detected');
+      // Check if the message is asking about token price or details
+      const isAskingPrice = content.toLowerCase().includes('price') || 
+                            content.toLowerCase().includes('worth') || 
+                            content.toLowerCase().includes('value') || 
+                            content.toLowerCase().includes('cost');
+      
+      const isAskingDetails = content.toLowerCase().includes('detail') || 
+                              content.toLowerCase().includes('info') || 
+                              content.toLowerCase().includes('about') || 
+                              content.toLowerCase().includes('what is') || 
+                              content.toLowerCase().includes('tell me about');
+      
+      // If we have a mint address and the user is asking about price or details
+      if (mintAddresses && mintAddresses.length > 0) {
+        const mintAddress = mintAddresses[0]; // Use the first found address
         
-        // Show a loading message
-        setMessages((prev) => [...prev, { 
-          role: 'assistant', 
-          content: `Checking the price of SONIC token (${SONIC_MINT})...` 
-        }]);
-        
-        try {
-          // Make a direct API call to get the SONIC token price
-          const timestamp = new Date().getTime();
-          const response = await fetch(`/api/token-price?_t=${timestamp}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache'
-            },
-            body: JSON.stringify({ mintAddress: [SONIC_MINT] }),
-          });
-          
-          console.log('Direct SONIC price API response status:', response.status);
-          
-          if (!response.ok) {
-            throw new Error(`API error: ${response.status} ${response.statusText}`);
-          }
-          
-          const responseData = await response.json();
-          console.log('Direct SONIC price API response:', responseData);
-          
-          if (!responseData.success) {
-            throw new Error(responseData.error || 'Failed to fetch SONIC token price');
-          }
-          
-          // Format the price response
-          const price = responseData.data[SONIC_MINT];
-          const priceMessage = `The current price of SONIC is **$${Number(price).toFixed(4)} USD**.`;
-          
-          // Update the loading message with the actual price
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1] = { 
+        // Validate if it's a valid token mint
+        if (isValidTokenMint(mintAddress)) {
+          // If asking about price or just providing the mint address
+          if (isAskingPrice || content.trim() === mintAddress) {
+            console.log(`Token price request detected for mint: ${mintAddress}`);
+            
+            // Show a loading message
+            setMessages((prev) => [...prev, { 
               role: 'assistant', 
-              content: priceMessage 
-            };
-            return newMessages;
-          });
-          
-          setIsLoading(false);
-          return;
-        } catch (priceError) {
-          console.error('Error fetching SONIC price directly:', priceError);
-          
-          // Update the loading message with the error
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1] = { 
+              content: `Checking the price for token with mint address ${mintAddress}...` 
+            }]);
+            
+            try {
+              // Make a direct API call to get the token price using GET endpoint
+              const timestamp = new Date().getTime();
+              const response = await fetch(`/api/token-price?mint=${mintAddress}&_t=${timestamp}`, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Cache-Control': 'no-cache, no-store, must-revalidate',
+                  'Pragma': 'no-cache'
+                }
+              });
+              
+              console.log('Token price API response status:', response.status);
+              
+              if (!response.ok) {
+                throw new Error(`API error: ${response.status} ${response.statusText}`);
+              }
+              
+              const responseData = await response.json();
+              console.log('Token price API response:', responseData);
+              
+              if (!responseData.success) {
+                throw new Error(responseData.error || 'Failed to fetch token price');
+              }
+              
+              // Format the price response
+              const price = responseData.data[mintAddress];
+              let priceMessage;
+              
+              if (price !== undefined) {
+                priceMessage = `The current price of this token (${mintAddress}) is **$${Number(price).toFixed(4)} USD**.`;
+              } else {
+                priceMessage = `I couldn't find price information for the token with mint address ${mintAddress}.`;
+              }
+              
+              // Update the loading message with the actual price
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { 
+                  role: 'assistant', 
+                  content: priceMessage 
+                };
+                return newMessages;
+              });
+              
+              setIsLoading(false);
+              return;
+            } catch (priceError) {
+              console.error('Error fetching token price:', priceError);
+              
+              // Update with error message
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { 
+                  role: 'assistant', 
+                  content: `Sorry, I couldn't fetch the price for this token. The service might be temporarily unavailable.` 
+                };
+                return newMessages;
+              });
+              
+              setIsLoading(false);
+              return;
+            }
+          }
+          // If asking about token details
+          else if (isAskingDetails) {
+            console.log(`Token details request detected for mint: ${mintAddress}`);
+            
+            // Show a loading message
+            setMessages((prev) => [...prev, { 
               role: 'assistant', 
-              content: `Sorry, I couldn't fetch the SONIC token price. ${priceError instanceof Error ? priceError.message : 'Please try again later.'}` 
-            };
-            return newMessages;
-          });
-          
-          setIsLoading(false);
-          return;
+              content: `Fetching details for token with mint address ${mintAddress}...` 
+            }]);
+            
+            try {
+              // Make a direct API call to get the token details
+              const timestamp = new Date().getTime();
+              const response = await fetch(`/api/token-details?mintAddress=${mintAddress}&_t=${timestamp}`, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Cache-Control': 'no-cache, no-store, must-revalidate',
+                  'Pragma': 'no-cache'
+                }
+              });
+              
+              console.log('Token details API response status:', response.status);
+              
+              if (!response.ok) {
+                throw new Error(`API error: ${response.status} ${response.statusText}`);
+              }
+              
+              const responseData = await response.json();
+              console.log('Token details API response:', responseData);
+              
+              if (!responseData.success) {
+                throw new Error(responseData.error || 'Failed to fetch token details');
+              }
+              
+              // Format the details response
+              const formattedDetails = formatTokenDetails(responseData);
+              
+              // Update the loading message with the actual details
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { 
+                  role: 'assistant', 
+                  content: formattedDetails 
+                };
+                return newMessages;
+              });
+              
+              setIsLoading(false);
+              return;
+            } catch (detailsError) {
+              console.error('Error fetching token details:', detailsError);
+              
+              // Update with error message
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { 
+                  role: 'assistant', 
+                  content: `Sorry, I couldn't fetch the details for this token. The service might be temporarily unavailable.` 
+                };
+                return newMessages;
+              });
+              
+              setIsLoading(false);
+              return;
+            }
+          }
         }
       }
-      
-      // Direct check for the SONIC token mint address
-      if (content.trim() === 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL') {
-        console.log('Direct SONIC token mint address detected');
-        const tokenDetailsResponse = await checkTokenDetails(content.trim());
-        setMessages((prev) => [...prev, { role: 'assistant', content: tokenDetailsResponse }]);
-        setIsLoading(false);
-        return;
-      }
-      
+
+      // Continue with the existing code for other types of messages
+      // ... existing code ...
+
       // Direct check for swap requests at the beginning
       if (content.toLowerCase().includes('swap') && 
           (content.toLowerCase().includes('sol') || content.toLowerCase().includes('sonic'))) {

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "bot": "ts-node --project tsconfig.bot.json src/scripts/run-standalone-bot.ts",
+    "bot": "ts-node --project tsconfig.bot.json src/scripts/run-bot.ts",
     "standalone-bot": "ts-node --project tsconfig.bot.json src/scripts/run-standalone-bot.ts"
   },
   "dependencies": {
