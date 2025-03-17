@@ -36,13 +36,17 @@ const markdownStyles = `
   .markdown-content p code,
   .markdown-content .inline-code {
     background-color: rgb(243, 244, 246);
+    color: rgb(31, 41, 55);
     padding: 0.125rem 0.25rem;
     border-radius: 0.25rem;
+    border: 1px solid rgb(229, 231, 235);
   }
   
   .dark .markdown-content p code,
   .dark .markdown-content .inline-code {
     background-color: rgb(31, 41, 55);
+    color: rgb(229, 231, 235);
+    border: 1px solid rgb(55, 65, 81);
   }
 `;
 
@@ -94,46 +98,41 @@ function SafeMarkdown({ children }: { children: string }) {
           // Customize code blocks
           code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || '');
-            return !inline ? (
-              // For block code, we'll let the CSS handle the styling
-              <pre>
-                <code
-                  className={match ? `language-${match[1]}` : ''}
-                  {...props}
-                >
-                  {children}
-                </code>
-              </pre>
-            ) : (
+            return inline ? (
+              // For inline code
               <code className="inline-code" {...props}>
                 {children}
               </code>
-            );
+            ) : null; // Return null for block code, let the pre component handle it
           },
-          // Fix paragraph wrapping for pre elements
-          p: ({ node, children, ...props }: any) => {
-            // Check if children contains a pre element
-            const childArray = React.Children.toArray(children);
-            const hasBlockElement = childArray.some(
-              (child) => 
-                React.isValidElement(child) && 
-                typeof child.type === 'string' && 
-                (child.type === 'pre' || child.type === 'div')
+          // Handle pre elements directly to avoid nesting issues
+          pre: ({ node, children, ...props }: any) => {
+            // Find the code element inside pre
+            const codeElement = React.Children.toArray(children).find(
+              (child) => React.isValidElement(child) && child.type === 'code'
             );
             
-            // If it has a block element, just render the children without the p wrapper
-            if (hasBlockElement) {
-              return <>{children}</>;
+            // If there's a code element, extract its props
+            if (codeElement && React.isValidElement(codeElement)) {
+              const codeProps = codeElement.props as { className?: string; children?: React.ReactNode };
+              const { className, children: codeChildren } = codeProps;
+              const match = className ? /language-(\w+)/.exec(className) : null;
+              
+              return (
+                <pre {...props}>
+                  <code className={match ? `language-${match[1]}` : ''}>
+                    {codeChildren}
+                  </code>
+                </pre>
+              );
             }
             
-            // Otherwise, render as normal paragraph
-            return <p {...props}>{children}</p>;
-          },
-          // Add a custom pre component to ensure it's not wrapped in a paragraph
-          pre: ({ node, children, ...props }: any) => {
-            // Don't add any additional classes or styling here
-            // The styling will be handled by the CSS in markdownStyles
+            // Fallback to just rendering the pre with its children
             return <pre {...props}>{children}</pre>;
+          },
+          // Simplify paragraph handling
+          p: ({ node, children, ...props }: any) => {
+            return <p {...props}>{children}</p>;
           },
           // Customize links to open in new tab and handle errors
           a: ({ node, children, href, ...props }: any) => {

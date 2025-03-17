@@ -736,27 +736,12 @@ bot.command('pools', async (ctx) => {
     // Show typing indicator
     await ctx.sendChatAction('typing');
     
-    // Get page and pageSize from command arguments
-    const args = ctx.message.text.split(' ');
-    let page = 1;
-    let pageSize = 5;
-    
-    if (args.length > 1) {
-      const parsedPage = parseInt(args[1]);
-      if (!isNaN(parsedPage) && parsedPage > 0) {
-        page = parsedPage;
-      }
-    }
-    
-    if (args.length > 2) {
-      const parsedPageSize = parseInt(args[2]);
-      if (!isNaN(parsedPageSize) && parsedPageSize > 0 && parsedPageSize <= 10) {
-        pageSize = parsedPageSize;
-      }
-    }
+    // Use fixed values for page and pageSize as requested
+    const page = 1;
+    const pageSize = 10;
     
     // Fetch liquidity pools
-    console.log(`Fetching liquidity pools with page=${page}, pageSize=${pageSize}`);
+    console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
     const poolsData = await getLiquidityPools(page, pageSize);
     
     if (!poolsData.success || !poolsData.data) {
@@ -780,9 +765,13 @@ bot.hears(/(?:list|show|get|display).*?(?:liquidity pools|pools|lps)/i, async (c
     // Show typing indicator
     await ctx.sendChatAction('typing');
     
-    // Fetch liquidity pools (first page, 5 pools)
-    console.log('Fetching liquidity pools for list request');
-    const poolsData = await getLiquidityPools(1, 5);
+    // Use fixed values for page and pageSize as requested
+    const page = 1;
+    const pageSize = 10;
+    
+    // Fetch liquidity pools with fixed values
+    console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
+    const poolsData = await getLiquidityPools(page, pageSize);
     
     if (!poolsData.success || !poolsData.data) {
       console.error('Failed to fetch liquidity pools:', poolsData.error);
@@ -1180,12 +1169,17 @@ bot.on(message('text'), async (ctx) => {
     await ctx.sendChatAction('typing');
     
     try {
-      // Get liquidity pools
-      const poolsData = await getLiquidityPools();
+      // Use fixed values for page and pageSize as requested
+      const page = 1;
+      const pageSize = 10;
+      
+      // Get liquidity pools with fixed values
+      console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
+      const poolsData = await getLiquidityPools(page, pageSize);
       
       // Format and send the information
       const formattedInfo = formatLiquidityPoolList(poolsData);
-      await ctx.reply(formattedInfo);
+      await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
       return;
     } catch (error) {
       console.error('Error fetching liquidity pools:', error);

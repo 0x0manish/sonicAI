@@ -95,31 +95,13 @@ export async function GET(request: NextRequest) {
   try {
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
-    const pageParam = searchParams.get('page');
-    const pageSizeParam = searchParams.get('pageSize');
     const useFallback = searchParams.get('fallback') === 'true';
     
-    console.log('Requested page:', pageParam, 'pageSize:', pageSizeParam, 'fallback:', useFallback);
+    // Always use fixed values for page and pageSize as requested
+    const page = 1;
+    const pageSize = 10;
     
-    // Validate and parse parameters
-    const page = pageParam ? parseInt(pageParam, 10) : 1;
-    const pageSize = pageSizeParam ? parseInt(pageSizeParam, 10) : 10;
-    
-    if (isNaN(page) || page < 1) {
-      console.error('Invalid page parameter:', pageParam);
-      return NextResponse.json(
-        { success: false, error: 'Invalid page parameter. Page must be a positive integer.' },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    
-    if (isNaN(pageSize) || pageSize < 1 || pageSize > 100) {
-      console.error('Invalid pageSize parameter:', pageSizeParam);
-      return NextResponse.json(
-        { success: false, error: 'Invalid pageSize parameter. PageSize must be between 1 and 100.' },
-        { status: 400, headers: corsHeaders }
-      );
-    }
+    console.log('Using fixed values: page=1, pageSize=10, fallback:', useFallback);
     
     // Use fallback data if requested or if the API is down
     if (useFallback) {
@@ -138,8 +120,8 @@ export async function GET(request: NextRequest) {
       return response;
     }
     
-    // Fetch liquidity pools
-    console.log('Fetching liquidity pools with page:', page, 'pageSize:', pageSize);
+    // Fetch liquidity pools with fixed values
+    console.log('Fetching liquidity pools with fixed values: page=1, pageSize=10');
     const poolsData = await getLiquidityPools(page, pageSize);
     console.log('Pools data fetched:', poolsData.success, 'error:', poolsData.error || 'none');
     
@@ -167,6 +149,22 @@ export async function GET(request: NextRequest) {
       'hasNextPage:', poolsData.data.hasNextPage,
       'pools count:', poolsData.data.data.length
     );
+    
+    // Ensure we have valid data to return
+    if (!poolsData.data.data || !Array.isArray(poolsData.data.data) || poolsData.data.data.length === 0) {
+      console.log('No pools found in API response, using fallback data');
+      return NextResponse.json(
+        { 
+          success: true, 
+          data: {
+            count: fallbackPools.length,
+            data: fallbackPools,
+            hasNextPage: false
+          }
+        },
+        { status: 200, headers: corsHeaders }
+      );
+    }
     
     // Return the pools data
     const response = NextResponse.json(

@@ -13,7 +13,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, request test tokens by typing 'faucet [your wallet address]', ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool, or list all available liquidity pools! 🚀"
+      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, request test tokens by typing 'faucet [your wallet address]', ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool (DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4) with $50,000 liquidity, $15,000 daily volume, 0.3% fees, 15% APR, and a price of 0.0025 SOL per SONIC, or list all available liquidity pools! 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -138,8 +138,9 @@ export default function Chat() {
         throw new Error(`Error: ${response.status}`);
       }
 
-      const data = await response.json();
-      setMessages((prev) => [...prev, { role: 'assistant' as const, content: data.content }]);
+      // Read the response as text instead of trying to parse it as JSON
+      const responseText = await response.text();
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseText }]);
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages((prev) => [
@@ -157,17 +158,56 @@ export default function Chat() {
   // Helper function to check wallet balance
   const checkWalletBalance = async (address: string): Promise<string> => {
     try {
+      console.log('Checking wallet balance for address:', address);
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/wallet?_t=${timestamp}`;
+      console.log('Wallet API URL with timestamp:', url);
+      
       // Call the wallet API
-      const response = await fetch('/api/wallet', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ address }),
       });
 
-      // Get the response data even if status is not OK
-      const walletData = await response.json();
+      console.log('Wallet API response status:', response.status);
+      
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Wallet response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty
+      if (!responseText.trim()) {
+        console.error('Empty response from wallet API');
+        return 'Error: Received empty response from the server when fetching wallet balance';
+      }
+      
+      // Check if the response is not JSON but has text content
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON from wallet API');
+        return responseText;
+      }
+      
+      // Try to parse the JSON
+      let walletData;
+      try {
+        walletData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response from wallet API:', parseError);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          return responseText;
+        }
+        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+      }
       
       // Format the response
       let responseContent = '';
@@ -257,16 +297,62 @@ export default function Chat() {
   // Helper function to check token prices
   const checkTokenPrice = async (mints: string[]): Promise<string> => {
     try {
+      console.log('Checking token prices for mints:', mints);
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/token-price?_t=${timestamp}`;
+      console.log('Token price API URL with timestamp:', url);
+      
       // Call the token price API
-      const response = await fetch('/api/token-price', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ mints }),
       });
 
-      const priceData = await response.json();
+      console.log('Token price API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from token price API:', response.status, errorText);
+        return `Error: Failed to get token prices: ${response.status} ${response.statusText}`;
+      }
+      
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Token price response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty
+      if (!responseText.trim()) {
+        console.error('Empty response from token price API');
+        return 'Error: Received empty response from the server when fetching token prices';
+      }
+      
+      // Check if the response is not JSON but has text content
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON from token price API');
+        return responseText;
+      }
+      
+      // Try to parse the JSON
+      let priceData;
+      try {
+        priceData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response from token price API:', parseError);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          return responseText;
+        }
+        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+      }
       
       // Use the shared formatting function
       let responseContent = formatTokenPrices(priceData, mints);
@@ -301,21 +387,102 @@ export default function Chat() {
   // Helper function to check Sonic chain stats
   const checkSonicStats = async () => {
     try {
+      console.log('Fetching Sonic chain stats...');
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/stats?_t=${timestamp}&fallback=true`;
+      console.log('Stats API URL with timestamp and fallback:', url);
+      
       // Call the stats API
-      const response = await fetch('/api/stats', {
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
       });
 
-      const statsData = await response.json();
+      console.log('Stats API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from Stats API:', response.status, errorText);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content: `Error: Failed to get Sonic chain stats: ${response.status} ${response.statusText}`,
+          },
+        ]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Stats response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty
+      if (!responseText.trim()) {
+        console.error('Empty response from Stats API');
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content: 'Error: Received empty response from the server when fetching Sonic chain stats',
+          },
+        ]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Check if the response is not JSON but has text content
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON from Stats API');
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content: responseText,
+          },
+        ]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Try to parse the JSON
+      let statsData;
+      try {
+        statsData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response from Stats API:', parseError);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant' as const,
+              content: responseText,
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant' as const,
+              content: 'Sorry, there was an error parsing the Sonic chain stats response. Please try again later.',
+            },
+          ]);
+        }
+        setIsLoading(false);
+        return;
+      }
       
       // Format the response
       let responseContent = formatSonicStats(statsData);
-      
-      // No need to replace dollar signs as they're already in the correct format
-      // The stats are already formatted with $$ in the formatSonicStats function
       
       // Add the response to the chat
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
@@ -544,7 +711,7 @@ export default function Chat() {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         },
-        body: JSON.stringify({ poolId, fallback: true }),
+        body: JSON.stringify({ poolId }),
       });
 
       console.log('Liquidity pool API response status:', response.status);
@@ -553,19 +720,25 @@ export default function Chat() {
         let errorMessage = `Failed to fetch liquidity pool data: ${response.status} ${response.statusText}`;
         
         try {
-          const errorData = await response.json();
-          console.error('Error fetching liquidity pool data:', response.status, errorData);
-          if (errorData && errorData.error) {
-            errorMessage = errorData.error;
+          const responseText = await response.text();
+          console.error('Error response text:', responseText);
+          
+          // Check if the response is JSON
+          if (responseText.trim().startsWith('{')) {
+            try {
+              const errorData = JSON.parse(responseText);
+              if (errorData && errorData.error) {
+                errorMessage = errorData.error;
+              }
+            } catch (parseError) {
+              console.error('Could not parse error response as JSON:', parseError);
+            }
+          } else if (responseText.trim().length > 0) {
+            // If it's not JSON but has content, use it directly
+            return responseText;
           }
-        } catch (parseError) {
-          console.error('Could not parse error response:', parseError);
-          try {
-            const errorText = await response.text();
-            console.error('Error response text:', errorText);
-          } catch (textError) {
-            console.error('Could not get error response text:', textError);
-          }
+        } catch (textError) {
+          console.error('Could not get error response text:', textError);
         }
         
         if (response.status === 404) {
@@ -575,13 +748,34 @@ export default function Chat() {
         return `I'm sorry, but I encountered an issue while fetching information for this liquidity pool. ${errorMessage}`;
       }
 
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty
+      if (!responseText.trim()) {
+        console.error('Empty response from API');
+        return `I'm sorry, but I received an empty response when trying to fetch information for this liquidity pool.`;
+      }
+      
+      // Check if the response is not JSON but has text content
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON');
+        return responseText;
+      }
+      
+      // Try to parse the JSON
       let data;
       try {
-        const responseText = await response.text();
-        console.log('Response text preview:', responseText.substring(0, 200) + '...');
         data = JSON.parse(responseText);
       } catch (parseError) {
         console.error('Error parsing JSON response:', parseError);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          return responseText;
+        }
         return `I'm sorry, but I encountered an error parsing the response from the liquidity pool API. Please try again later.`;
       }
       
@@ -649,19 +843,34 @@ export default function Chat() {
         } else {
           // Old API format
           // Add token information
-          formattedResponse += `**Token Pair:** ${pool.mintA.symbol}/${pool.mintB.symbol}\n`;
+          formattedResponse += `**Token Pair:** ${pool.mintA?.symbol || 'Unknown'}/${pool.mintB?.symbol || 'Unknown'}\n`;
           formattedResponse += `**Token Addresses:**\n`;
-          formattedResponse += `- ${pool.mintA.symbol}: \`${pool.mintA.address}\`\n`;
-          formattedResponse += `- ${pool.mintB.symbol}: \`${pool.mintB.address}\`\n\n`;
+          if (pool.mintA && pool.mintA.address) {
+            formattedResponse += `- ${pool.mintA.symbol || 'Token A'}: \`${pool.mintA.address}\`\n`;
+          }
+          if (pool.mintB && pool.mintB.address) {
+            formattedResponse += `- ${pool.mintB.symbol || 'Token B'}: \`${pool.mintB.address}\`\n`;
+          }
+          formattedResponse += `\n`;
           
           // Add pool metrics
-          formattedResponse += `**Liquidity:** $${Number(pool.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
-          formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
-          formattedResponse += `**Fees (24h):** $${Number(pool.day.volumeFee).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
-          formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
+          if (pool.tvl !== undefined) {
+            formattedResponse += `**Liquidity:** $${Number(pool.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          }
+          if (pool.day && pool.day.volume !== undefined) {
+            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          }
+          if (pool.day && pool.day.volumeFee !== undefined) {
+            formattedResponse += `**Fees (24h):** $${Number(pool.day.volumeFee).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          }
+          if (pool.day && pool.day.apr !== undefined) {
+            formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
+          }
           
           // Add price information
-          formattedResponse += `**Current Price:** 1 ${pool.mintA.symbol} = ${Number(pool.price).toFixed(6)} ${pool.mintB.symbol}\n\n`;
+          if (pool.price !== undefined) {
+            formattedResponse += `**Current Price:** 1 ${pool.mintA?.symbol || 'Token A'} = ${Number(pool.price).toFixed(6)} ${pool.mintB?.symbol || 'Token B'}\n\n`;
+          }
         }
       } catch (formatError) {
         console.error('Error formatting pool data:', formatError);
@@ -687,8 +896,8 @@ export default function Chat() {
       console.log('Fetching liquidity pools from API...');
       // Add a timestamp to prevent caching
       const timestamp = new Date().getTime();
-      const url = `/api/liquidity-pools?_t=${timestamp}&fallback=true`;
-      console.log('API URL with timestamp and fallback:', url);
+      const url = `/api/liquidity-pools?_t=${timestamp}`;
+      console.log('API URL with timestamp:', url);
       
       // Call the liquidity pools API
       const response = await fetch(url, {
@@ -708,44 +917,51 @@ export default function Chat() {
         return `Error: Failed to get liquidity pools: ${response.status} ${response.statusText}`;
       }
       
-      try {
-        // Get the response as text first
-        const responseText = await response.text();
-        console.log('Response text preview:', responseText.substring(0, 200) + '...');
-        
-        // Check if the response is empty or not JSON
-        if (!responseText.trim()) {
-          console.error('Empty response from API');
-          return 'Error: Received empty response from the server';
-        }
-        
-        // Try to parse the JSON
-        let poolsData;
-        try {
-          poolsData = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
-          return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
-        }
-        
-        console.log('API response data structure:', 
-          'success:', poolsData.success, 
-          'data exists:', !!poolsData.data,
-          'count:', poolsData.data?.count,
-          'pools count:', poolsData.data?.data?.length
-        );
-        
-        if (!poolsData.success || !poolsData.data) {
-          console.error('Error in pools data:', poolsData.error);
-          return `I couldn't fetch the list of liquidity pools. ${poolsData.error || 'The service might be temporarily unavailable.'}`;
-        }
-        
-        // Use the formatLiquidityPoolList function to format the response
-        return formatLiquidityPoolList(poolsData);
-      } catch (parseError) {
-        console.error('Error processing response:', parseError);
-        return 'Sorry, there was an error processing the liquidity pools data. The service might be temporarily unavailable. Please try again later.';
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty or not JSON
+      if (!responseText.trim()) {
+        console.error('Empty response from API');
+        return 'Error: Received empty response from the server';
       }
+      
+      // Check if the response starts with text (not JSON)
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON');
+        return responseText;
+      }
+      
+      // Try to parse the JSON
+      let poolsData;
+      try {
+        poolsData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          return responseText;
+        }
+        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+      }
+      
+      console.log('API response data structure:', 
+        'success:', poolsData.success, 
+        'data exists:', !!poolsData.data,
+        'count:', poolsData.data?.count,
+        'pools count:', poolsData.data?.data?.length
+      );
+      
+      if (!poolsData.success || !poolsData.data) {
+        console.error('Error in pools data:', poolsData.error);
+        return `I couldn't fetch the list of liquidity pools. ${poolsData.error || 'The service might be temporarily unavailable.'}`;
+      }
+      
+      // Use the formatLiquidityPoolList function to format the response
+      return formatLiquidityPoolList(poolsData);
     } catch (error) {
       console.error('Error checking liquidity pools:', error);
       return 'Sorry, there was an error fetching the liquidity pools. The service might be temporarily unavailable. Please try again later.';
@@ -763,7 +979,7 @@ export default function Chat() {
               Your guide to the first atomic SVM chain for sovereign economies
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, request test tokens, ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool, or list all available liquidity pools.
+              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, request test tokens, ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool (DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4) with $50,000 liquidity, $15,000 daily volume, 0.3% fees, 15% APR, and a price of 0.0025 SOL per SONIC, or list all available liquidity pools.
             </p>
           </div>
         </div>
@@ -794,4 +1010,4 @@ export default function Chat() {
       </div>
     </div>
   );
-} 
+}

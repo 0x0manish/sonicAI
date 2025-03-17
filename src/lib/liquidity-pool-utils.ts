@@ -256,8 +256,8 @@ export async function getLiquidityPools(page: number = 1, pageSize: number = 10)
     try {
       console.log(`Fetching liquidity pools: page=${page}, pageSize=${pageSize}, attempt=${retryCount + 1}`);
       
-      // Build the URL with parameters
-      const url = `https://api.sega.so/api/pools/info/list?page=${page}&pageSize=${pageSize}`;
+      // Build the URL with parameters - always use page=1 and pageSize=10 as requested
+      const url = `https://api.sega.so/api/pools/info/list?page=1&pageSize=10`;
       console.log('API URL:', url);
       
       // Add a timestamp to prevent caching
@@ -320,6 +320,22 @@ export async function getLiquidityPools(page: number = 1, pageSize: number = 10)
       try {
         const responseText = await response.text();
         console.log('Response text preview:', responseText.substring(0, 200) + '...');
+        
+        // Check if the response is valid JSON
+        if (!responseText.trim() || !responseText.trim().startsWith('{')) {
+          console.error('Invalid JSON response:', responseText);
+          return {
+            id: '',
+            success: false,
+            data: {
+              count: 0,
+              data: [],
+              hasNextPage: false
+            },
+            error: 'Invalid response format from API'
+          };
+        }
+        
         data = JSON.parse(responseText) as LiquidityPoolListResponse;
       } catch (error) {
         const parseError = error as Error;
@@ -352,6 +368,12 @@ export async function getLiquidityPools(page: number = 1, pageSize: number = 10)
           error: 'Invalid response data format from API'
         };
       }
+      
+      // Log each pool for debugging
+      console.log('Pools received:');
+      data.data.data.forEach((pool, index) => {
+        console.log(`Pool ${index + 1}: ${pool.mintA?.symbol || 'Unknown'}-${pool.mintB?.symbol || 'Unknown'}, ID: ${pool.id || 'Unknown'}`);
+      });
       
       return data;
     } catch (error) {
@@ -421,15 +443,29 @@ export function formatLiquidityPoolList(poolsResponse: any): string {
     return 'No liquidity pools found or invalid data format.';
   }
 
-  console.log(`Formatting ${poolsResponse.data.data.length} pools out of ${poolsResponse.data.count} total`);
+  const poolsData = poolsResponse.data.data;
+  console.log(`Formatting ${poolsData.length} pools out of ${poolsResponse.data.count} total`);
   
   try {
     let result = `## Available Liquidity Pools (${poolsResponse.data.count} total)\n\n`;
     
-    poolsResponse.data.data.forEach((pool: any, index: number) => {
+    // Process all pools in the response (up to 6)
+    const poolsToShow = Math.min(poolsData.length, 6);
+    
+    for (let i = 0; i < poolsToShow; i++) {
       try {
+        const pool = poolsData[i];
+        
+        // Safely check if mintA and mintB exist
+        if (!pool.mintA || !pool.mintB) {
+          console.error(`Pool at index ${i} is missing mintA or mintB:`, pool);
+          result += `**${i + 1}. Unknown Pool**\n`;
+          result += `- Pool ID: \`${pool.id || 'Unknown'}\`\n\n`;
+          continue;
+        }
+        
         // Format each pool
-        result += `**${index + 1}. ${pool.mintA.symbol}/${pool.mintB.symbol}**\n`;
+        result += `**${i + 1}. ${pool.mintA.symbol || 'Unknown'}/${pool.mintB.symbol || 'Unknown'}**\n`;
         
         // Add liquidity information
         if (pool.tvl !== undefined) {
@@ -453,16 +489,13 @@ export function formatLiquidityPoolList(poolsResponse: any): string {
         }
         
         // Add pool ID
-        result += `- Pool ID: \`${pool.id}\`\n\n`;
-      } catch (poolError) {
-        console.error(`Error formatting pool at index ${index}:`, poolError);
-        result += `**${index + 1}. Pool**\n`;
         result += `- Pool ID: \`${pool.id || 'Unknown'}\`\n\n`;
+      } catch (poolError) {
+        console.error(`Error formatting pool at index ${i}:`, poolError);
+        result += `**${i + 1}. Pool**\n`;
+        result += `- Pool ID: \`${poolsData[i]?.id || 'Unknown'}\`\n\n`;
       }
-    });
-    
-    // Add note about viewing on Sega DEX
-    result += `\nView all pools on [Sega DEX](https://sega.so/pools)`;
+    }
     
     console.log('Formatted response length:', result.length);
     return result;
@@ -473,13 +506,14 @@ export function formatLiquidityPoolList(poolsResponse: any): string {
     try {
       let fallbackResult = `## Available Liquidity Pools\n\n`;
       
-      poolsResponse.data.data.forEach((pool: any, index: number) => {
+      const poolsToShow = Math.min(poolsData.length, 6);
+      for (let i = 0; i < poolsToShow; i++) {
         try {
-          fallbackResult += `**${index + 1}. Pool ID:** \`${pool.id || 'Unknown'}\`\n\n`;
+          fallbackResult += `**${i + 1}. Pool ID:** \`${poolsData[i]?.id || 'Unknown'}\`\n\n`;
         } catch (e) {
-          fallbackResult += `**${index + 1}. Unknown Pool**\n\n`;
+          fallbackResult += `**${i + 1}. Unknown Pool**\n\n`;
         }
-      });
+      }
       
       return fallbackResult;
     } catch (fallbackError) {
