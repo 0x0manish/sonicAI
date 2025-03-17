@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSonicStats } from '@/lib/stats-utils';
 
 export const runtime = 'edge';
 
@@ -18,13 +17,6 @@ export async function OPTIONS() {
   });
 }
 
-// Fallback data in case the API is down
-const fallbackStats = {
-  success: true,
-  tvl: 9079.02, // Updated to match current API data
-  volume24: 238, // Updated to match current API data
-};
-
 /**
  * Fetches stats directly from the Sega API
  * This is a direct implementation to ensure we get fresh data
@@ -40,19 +32,42 @@ async function fetchDirectFromSegaAPI() {
     method: 'GET',
     headers: {
       'accept': 'application/json',
+      'Origin': 'https://sega.so',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
-      'Expires': '0'
+      'Expires': '0',
+      'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
     }
   });
   
   if (!response.ok) {
+    console.error(`API returned status ${response.status}`);
+    
+    // Try to get the response text for more information
+    try {
+      const responseText = await response.text();
+      console.error('Response text:', responseText);
+    } catch (textError) {
+      console.error('Could not get response text:', textError);
+    }
+    
     throw new Error(`API returned status ${response.status}`);
   }
   
-  const data = await response.json();
+  // Get the response as text first
+  const responseText = await response.text();
+  console.log('Response text preview:', responseText.substring(0, 200) + '...');
+  
+  // Check if the response is valid JSON
+  if (!responseText.trim() || !responseText.trim().startsWith('{')) {
+    console.error('Invalid JSON response:', responseText);
+    throw new Error('Invalid response format from API');
+  }
+  
+  const data = JSON.parse(responseText);
   
   if (!data.success || !data.data) {
+    console.error('API returned unsuccessful data:', data);
     throw new Error('API returned unsuccessful data');
   }
   
@@ -72,21 +87,8 @@ export async function GET(req: NextRequest) {
   try {
     console.log('Stats API endpoint called');
     
-    // Check if fallback is explicitly requested
-    const searchParams = req.nextUrl.searchParams;
-    const useFallback = searchParams.get('fallback') === 'true';
-    
-    if (useFallback) {
-      console.log('Using fallback stats as explicitly requested');
-      return NextResponse.json(fallbackStats, { 
-        status: 200,
-        headers: corsHeaders
-      });
-    }
-    
     // Try to get real stats directly from external API
     try {
-      // First try direct API call to ensure freshest data
       const directStats = await fetchDirectFromSegaAPI();
       console.log('Successfully fetched direct stats:', directStats);
       return NextResponse.json(directStats, { 
@@ -96,40 +98,24 @@ export async function GET(req: NextRequest) {
     } catch (directApiError) {
       console.error('Error calling Sega API directly:', directApiError);
       
-      // Fall back to using the utility function
-      try {
-        const stats = await getSonicStats();
-        
-        // If the API call succeeded, return the real data
-        if (stats.success) {
-          console.log('Successfully fetched real stats via utility:', stats);
-          return NextResponse.json(stats, { 
-            status: 200,
-            headers: corsHeaders
-          });
-        }
-        
-        // If the API call failed, log the error and fall through to fallback
-        console.log('External API returned unsuccessful data:', stats.error);
-      } catch (apiError) {
-        // If there was an exception calling the API, log it and fall through to fallback
-        console.error('Error calling external API via utility:', apiError);
-      }
+      // Return error response
+      return NextResponse.json({
+        success: false,
+        error: `Failed to fetch stats from Sega API: ${directApiError instanceof Error ? directApiError.message : 'Unknown error'}`
+      }, { 
+        status: 500,
+        headers: corsHeaders
+      });
     }
-    
-    // Only use fallback if explicitly requested or if all API calls failed
-    console.log('All API calls failed, using fallback stats');
-    return NextResponse.json(fallbackStats, { 
-      status: 200,
-      headers: corsHeaders
-    });
   } catch (error) {
     console.error('Error in stats API:', error);
     
-    // Return fallback data in case of error
-    console.log('Error occurred, using fallback stats');
-    return NextResponse.json(fallbackStats, { 
-      status: 200,
+    // Return error response
+    return NextResponse.json({
+      success: false,
+      error: `Error fetching stats: ${error instanceof Error ? error.message : 'Unknown error'}`
+    }, { 
+      status: 500,
       headers: corsHeaders
     });
   }

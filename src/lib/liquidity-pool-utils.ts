@@ -74,20 +74,49 @@ export interface LiquidityPoolListResponse {
 }
 
 /**
- * Fetches liquidity pool information by pool ID
- * @param poolId The liquidity pool ID
+ * Fetches a liquidity pool by its ID
+ * @param poolId The ID of the liquidity pool to fetch
  * @returns A promise that resolves to the liquidity pool information
  */
 export async function getLiquidityPoolById(poolId: string): Promise<LiquidityPoolResponse> {
   try {
-    const response = await fetch(`https://api.sega.so/api/pools/info/ids?ids=${poolId}`, {
+    console.log('Fetching liquidity pool data from Sega API for ID:', poolId);
+    
+    // Use the exact API endpoint with the pool ID
+    const url = `https://api.sega.so/api/pools/info/ids?ids=${poolId}`;
+    console.log('API URL:', url);
+    
+    // Add a timestamp to prevent caching
+    const timestamp = new Date().getTime();
+    const urlWithTimestamp = `${url}&_t=${timestamp}`;
+    console.log('API URL with timestamp:', urlWithTimestamp);
+    
+    // Make the request with additional headers
+    const response = await fetch(urlWithTimestamp, {
       method: 'GET',
       headers: {
-        'accept': 'application/json'
+        'accept': 'application/json',
+        'Origin': 'https://sega.so',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
       }
     });
 
+    console.log('API response status:', response.status);
+
     if (!response.ok) {
+      console.error(`Failed to fetch liquidity pool data: ${response.status} ${response.statusText}`);
+      
+      // Try to get the response text for more information
+      try {
+        const responseText = await response.text();
+        console.error('Response text:', responseText);
+      } catch (textError) {
+        console.error('Could not get response text:', textError);
+      }
+      
       return {
         id: '',
         success: false,
@@ -96,7 +125,35 @@ export async function getLiquidityPoolById(poolId: string): Promise<LiquidityPoo
       };
     }
 
-    const data = await response.json() as LiquidityPoolResponse;
+    // Get the response as text first
+    const responseText = await response.text();
+    console.log('Response text preview:', responseText.substring(0, 200) + '...');
+    
+    // Check if the response is valid JSON
+    if (!responseText.trim() || !responseText.trim().startsWith('{')) {
+      console.error('Invalid JSON response:', responseText);
+      return {
+        id: '',
+        success: false,
+        data: [],
+        error: 'Invalid response format from API'
+      };
+    }
+    
+    const data = JSON.parse(responseText) as LiquidityPoolResponse;
+    
+    // Validate the response data
+    if (!data || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
+      console.error('No pool data found for ID:', poolId);
+      return {
+        id: '',
+        success: false,
+        data: [],
+        error: `No liquidity pool found with ID: ${poolId}`
+      };
+    }
+    
+    console.log('Successfully fetched pool data for ID:', poolId);
     return data;
   } catch (error) {
     console.error('Error fetching liquidity pool data:', error);
@@ -104,7 +161,7 @@ export async function getLiquidityPoolById(poolId: string): Promise<LiquidityPoo
       id: '',
       success: false,
       data: [],
-      error: 'Failed to fetch liquidity pool data. The service might be temporarily unavailable.'
+      error: `Failed to fetch liquidity pool data: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
   }
 }
@@ -183,7 +240,7 @@ export function formatLiquidityPoolInfo(poolResponse: LiquidityPoolResponse): st
       message += `*Pool ID:* \`${pool.id || pool.address}\`\n\n`;
       
       // Add link to Sega DEX
-      message += `View on [Sega DEX](https://sega.so/pools/${pool.id || pool.address})`;
+      message += `View on [Sega DEX](https://sega.so/liquidity-pools/ "Open in new tab")`;
       
       return message;
     } else {
@@ -208,7 +265,7 @@ export function formatLiquidityPoolInfo(poolResponse: LiquidityPoolResponse): st
       result += `*Pool ID:* \`${pool.id}\`\n\n`;
       
       // Add link to Sega DEX
-      result += `View on [Sega DEX](https://sega.so/pools/${pool.id})`;
+      result += `View on [Sega DEX](https://sega.so/liquidity-pools/ "Open in new tab")`;
       
       return result;
     }
@@ -246,153 +303,48 @@ export function isValidPoolId(id: string): boolean {
 
 /**
  * Fetches a list of liquidity pools
- * @param page The page number to fetch (default: 1)
- * @param pageSize The number of pools per page (default: 10)
  * @returns A promise that resolves to the liquidity pool list
  */
-export async function getLiquidityPools(page: number = 1, pageSize: number = 10): Promise<LiquidityPoolListResponse> {
-  const maxRetries = 3;
-  let retryCount = 0;
-  let lastError: any = null;
-
-  while (retryCount < maxRetries) {
-    try {
-      console.log(`Fetching liquidity pools: page=${page}, pageSize=${pageSize}, attempt=${retryCount + 1}`);
-      
-      // Build the URL with parameters - always use page=1 and pageSize=10 as requested
-      const url = `https://api.sega.so/api/pools/info/list?page=1&pageSize=10`;
-      console.log('API URL:', url);
-      
-      // Add a timestamp to prevent caching
-      const timestamp = new Date().getTime();
-      const urlWithTimestamp = `${url}${url.includes('?') ? '&' : '?'}_t=${timestamp}`;
-      console.log('API URL with timestamp:', urlWithTimestamp);
-      
-      // Make the request with additional headers
-      const response = await fetch(urlWithTimestamp, {
-        method: 'GET',
-        headers: {
-          'accept': 'application/json',
-          'Origin': 'https://sega.so',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
-        }
-      });
-
-      console.log('API response status:', response.status);
-      
-      // Handle non-OK responses
-      if (!response.ok) {
-        console.error(`Failed to fetch liquidity pools: ${response.status} ${response.statusText}`);
-        
-        // Try to get the response text for more information
-        try {
-          const responseText = await response.text();
-          console.error('Response text:', responseText);
-        } catch (textError) {
-          console.error('Could not get response text:', textError);
-        }
-        
-        // If we get a 429 (Too Many Requests), wait and retry
-        if (response.status === 429) {
-          retryCount++;
-          if (retryCount < maxRetries) {
-            const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff
-            console.log(`Rate limited, waiting ${waitTime}ms before retry ${retryCount}/${maxRetries}`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            continue;
-          }
-        }
-        
-        return {
-          id: '',
-          success: false,
-          data: {
-            count: 0,
-            data: [],
-            hasNextPage: false
-          },
-          error: `Failed to fetch liquidity pools: ${response.status} ${response.statusText}`
-        };
+export async function getLiquidityPools(): Promise<LiquidityPoolListResponse> {
+  try {
+    console.log('Fetching liquidity pools from Sega API');
+    
+    // Use the exact API endpoint with page=1 and pageSize=6 as specified
+    const url = 'https://api.sega.so/api/pools/info/list?page=1&pageSize=6';
+    console.log('API URL:', url);
+    
+    // Add a timestamp to prevent caching
+    const timestamp = new Date().getTime();
+    const urlWithTimestamp = `${url}&_t=${timestamp}`;
+    console.log('API URL with timestamp:', urlWithTimestamp);
+    
+    // Make the request with additional headers
+    const response = await fetch(urlWithTimestamp, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json',
+        'Origin': 'https://sega.so',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'User-Agent': 'Mozilla/5.0 (compatible; SonicAgent/1.0)'
       }
+    });
 
-      // Try to parse the JSON response
-      let data: LiquidityPoolListResponse;
+    console.log('API response status:', response.status);
+    
+    // Handle non-OK responses
+    if (!response.ok) {
+      console.error(`Failed to fetch liquidity pools: ${response.status} ${response.statusText}`);
+      
+      // Try to get the response text for more information
       try {
         const responseText = await response.text();
-        console.log('Response text preview:', responseText.substring(0, 200) + '...');
-        
-        // Check if the response is valid JSON
-        if (!responseText.trim() || !responseText.trim().startsWith('{')) {
-          console.error('Invalid JSON response:', responseText);
-          return {
-            id: '',
-            success: false,
-            data: {
-              count: 0,
-              data: [],
-              hasNextPage: false
-            },
-            error: 'Invalid response format from API'
-          };
-        }
-        
-        data = JSON.parse(responseText) as LiquidityPoolListResponse;
-      } catch (error) {
-        const parseError = error as Error;
-        console.error('Error parsing JSON response:', parseError);
-        return {
-          id: '',
-          success: false,
-          data: {
-            count: 0,
-            data: [],
-            hasNextPage: false
-          },
-          error: `Failed to parse API response: ${parseError.message}`
-        };
+        console.error('Response text:', responseText);
+      } catch (textError) {
+        console.error('Could not get response text:', textError);
       }
       
-      console.log(`Received ${data.data?.data?.length || 0} pools out of ${data.data?.count || 0} total`);
-      
-      // Validate the response data
-      if (!data || !data.data || !data.data.data || !Array.isArray(data.data.data)) {
-        console.error('Invalid response data format:', data);
-        return {
-          id: '',
-          success: false,
-          data: {
-            count: 0,
-            data: [],
-            hasNextPage: false
-          },
-          error: 'Invalid response data format from API'
-        };
-      }
-      
-      // Log each pool for debugging
-      console.log('Pools received:');
-      data.data.data.forEach((pool, index) => {
-        console.log(`Pool ${index + 1}: ${pool.mintA?.symbol || 'Unknown'}-${pool.mintB?.symbol || 'Unknown'}, ID: ${pool.id || 'Unknown'}`);
-      });
-      
-      return data;
-    } catch (error) {
-      console.error(`Error fetching liquidity pools (attempt ${retryCount + 1}/${maxRetries}):`, error);
-      lastError = error;
-      
-      // Retry on network errors
-      retryCount++;
-      if (retryCount < maxRetries) {
-        const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff
-        console.log(`Network error, waiting ${waitTime}ms before retry ${retryCount}/${maxRetries}`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
-      }
-      
-      // All retries failed
       return {
         id: '',
         success: false,
@@ -401,22 +353,69 @@ export async function getLiquidityPools(page: number = 1, pageSize: number = 10)
           data: [],
           hasNextPage: false
         },
-        error: `Failed to fetch liquidity pools after ${maxRetries} attempts. ${lastError?.message || 'Unknown error'}`
+        error: `Failed to fetch liquidity pools: ${response.status} ${response.statusText}`
       };
     }
+
+    // Try to parse the JSON response
+    const responseText = await response.text();
+    console.log('Response text preview:', responseText.substring(0, 200) + '...');
+    
+    // Check if the response is valid JSON
+    if (!responseText.trim() || !responseText.trim().startsWith('{')) {
+      console.error('Invalid JSON response:', responseText);
+      return {
+        id: '',
+        success: false,
+        data: {
+          count: 0,
+          data: [],
+          hasNextPage: false
+        },
+        error: 'Invalid response format from API'
+      };
+    }
+    
+    const data = JSON.parse(responseText) as LiquidityPoolListResponse;
+    
+    console.log(`Received ${data.data?.data?.length || 0} pools out of ${data.data?.count || 0} total`);
+    
+    // Validate the response data
+    if (!data || !data.data || !data.data.data || !Array.isArray(data.data.data)) {
+      console.error('Invalid response data format:', data);
+      return {
+        id: '',
+        success: false,
+        data: {
+          count: 0,
+          data: [],
+          hasNextPage: false
+        },
+        error: 'Invalid response data format from API'
+      };
+    }
+    
+    // Log each pool for debugging
+    console.log('Pools received:');
+    data.data.data.forEach((pool, index) => {
+      console.log(`Pool ${index + 1}: ${pool.mintA?.symbol || 'Unknown'}-${pool.mintB?.symbol || 'Unknown'}, ID: ${pool.id || 'Unknown'}`);
+    });
+    
+    return data;
+  } catch (error) {
+    console.error('Error fetching liquidity pools:', error);
+    
+    return {
+      id: '',
+      success: false,
+      data: {
+        count: 0,
+        data: [],
+        hasNextPage: false
+      },
+      error: `Failed to fetch liquidity pools: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
   }
-  
-  // This should never be reached, but TypeScript requires a return statement
-  return {
-    id: '',
-    success: false,
-    data: {
-      count: 0,
-      data: [],
-      hasNextPage: false
-    },
-    error: 'Failed to fetch liquidity pools after all retry attempts'
-  };
 }
 
 /**
@@ -453,76 +452,56 @@ export function formatLiquidityPoolList(poolsResponse: any): string {
     let result = `## Available Liquidity Pools (${poolsResponse.data.count} total)\n\n`;
     
     // Process all pools in the response (up to 6)
-    const poolsToShow = Math.min(poolsData.length, 6);
+    const poolsToShow = poolsData.length;
     
     for (let i = 0; i < poolsToShow; i++) {
-      try {
-        const pool = poolsData[i];
-        
-        // Safely check if mintA and mintB exist
-        if (!pool.mintA || !pool.mintB) {
-          console.error(`Pool at index ${i} is missing mintA or mintB:`, pool);
-          result += `**${i + 1}. Unknown Pool**\n`;
-          result += `- Pool ID: \`${pool.id || 'Unknown'}\`\n\n`;
-          continue;
-        }
-        
-        // Format each pool
-        result += `**${i + 1}. ${pool.mintA.symbol || 'Unknown'}/${pool.mintB.symbol || 'Unknown'}**\n`;
-        
-        // Add liquidity information with consistent formatting
-        if (pool.tvl !== undefined) {
-          // Format with 2 decimal places for consistency
-          result += `- Liquidity: $${Number(pool.tvl).toFixed(2)}\n`;
-        }
-        
-        // Add volume information with consistent formatting
-        if (pool.day && pool.day.volume !== undefined) {
-          // Format with 2 decimal places for consistency
-          result += `- Volume (24h): $${Number(pool.day.volume).toFixed(2)}\n`;
-        }
-        
-        // Add APR information with consistent formatting
-        if (pool.day && pool.day.apr !== undefined) {
-          result += `- APR (24h): ${(Number(pool.day.apr) * 100).toFixed(2)}%\n`;
-        }
-        
-        // Add fee information
-        if (pool.feeRate !== undefined) {
-          const feePercentage = (Number(pool.feeRate) / 10000).toFixed(2);
-          result += `- Fee Rate: ${feePercentage}%\n`;
-        }
-        
-        // Add pool ID
-        result += `- Pool ID: \`${pool.id || 'Unknown'}\`\n\n`;
-      } catch (poolError) {
-        console.error(`Error formatting pool at index ${i}:`, poolError);
-        result += `**${i + 1}. Pool**\n`;
-        result += `- Pool ID: \`${poolsData[i]?.id || 'Unknown'}\`\n\n`;
+      const pool = poolsData[i];
+      
+      // Safely check if mintA and mintB exist
+      if (!pool.mintA || !pool.mintB) {
+        console.error(`Pool at index ${i} is missing mintA or mintB:`, pool);
+        continue;
       }
+      
+      // Format each pool
+      result += `**${i + 1}. ${pool.mintA.symbol}/${pool.mintB.symbol}**\n`;
+      
+      // Add liquidity information with consistent formatting
+      if (pool.tvl !== undefined) {
+        // Format with 2 decimal places for consistency
+        result += `- Liquidity: $${Number(pool.tvl).toFixed(2)}\n`;
+      }
+      
+      // Add volume information with consistent formatting
+      if (pool.day && pool.day.volume !== undefined) {
+        // Format with 2 decimal places for consistency
+        result += `- Volume (24h): $${Number(pool.day.volume).toFixed(2)}\n`;
+      }
+      
+      // Add APR information with consistent formatting
+      if (pool.day && pool.day.apr !== undefined) {
+        result += `- APR (24h): ${(Number(pool.day.apr) * 100).toFixed(2)}%\n`;
+      }
+      
+      // Add fee information
+      if (pool.feeRate !== undefined) {
+        const feePercentage = (Number(pool.feeRate) / 10000).toFixed(2);
+        result += `- Fee Rate: ${feePercentage}%\n`;
+      }
+      
+      // Add pool ID
+      result += `- Pool ID: \`${pool.id}\`\n\n`;
     }
+    
+    // Add link to view all pools on Sega DEX
+    result += `View all liquidity pools on [Sega DEX](https://sega.so/liquidity-pools/ "Open in new tab")\n`;
     
     console.log('Formatted response length:', result.length);
     return result;
   } catch (error) {
     console.error('Error formatting liquidity pool list:', error);
     
-    // Fallback to a simple format
-    try {
-      let fallbackResult = `## Available Liquidity Pools\n\n`;
-      
-      const poolsToShow = Math.min(poolsData.length, 6);
-      for (let i = 0; i < poolsToShow; i++) {
-        try {
-          fallbackResult += `**${i + 1}. Pool ID:** \`${poolsData[i]?.id || 'Unknown'}\`\n\n`;
-        } catch (e) {
-          fallbackResult += `**${i + 1}. Unknown Pool**\n\n`;
-        }
-      }
-      
-      return fallbackResult;
-    } catch (fallbackError) {
-      return 'Error formatting liquidity pool list. Please try again later.';
-    }
+    // We should never reach this point if we're using real data correctly
+    return `Error formatting liquidity pool list: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`;
   }
 } 

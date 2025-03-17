@@ -736,13 +736,9 @@ bot.command('pools', async (ctx) => {
     // Show typing indicator
     await ctx.sendChatAction('typing');
     
-    // Use fixed values for page and pageSize as requested
-    const page = 1;
-    const pageSize = 10;
-    
     // Fetch liquidity pools
-    console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
-    const poolsData = await getLiquidityPools(page, pageSize);
+    console.log('Fetching liquidity pools from Sega API');
+    const poolsData = await getLiquidityPools();
     
     if (!poolsData.success || !poolsData.data) {
       console.error('Failed to fetch liquidity pools:', poolsData.error);
@@ -765,13 +761,9 @@ bot.hears(/(?:list|show|get|display).*?(?:liquidity pools|pools|lps)/i, async (c
     // Show typing indicator
     await ctx.sendChatAction('typing');
     
-    // Use fixed values for page and pageSize as requested
-    const page = 1;
-    const pageSize = 10;
-    
     // Fetch liquidity pools with fixed values
-    console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
-    const poolsData = await getLiquidityPools(page, pageSize);
+    console.log('Fetching liquidity pools from Sega API');
+    const poolsData = await getLiquidityPools();
     
     if (!poolsData.success || !poolsData.data) {
       console.error('Failed to fetch liquidity pools:', poolsData.error);
@@ -1174,8 +1166,8 @@ bot.on(message('text'), async (ctx) => {
       const pageSize = 10;
       
       // Get liquidity pools with fixed values
-      console.log(`Fetching liquidity pools with fixed values: page=${page}, pageSize=${pageSize}`);
-      const poolsData = await getLiquidityPools(page, pageSize);
+      console.log('Fetching liquidity pools from Sega API');
+      const poolsData = await getLiquidityPools();
       
       // Format and send the information
       const formattedInfo = formatLiquidityPoolList(poolsData);

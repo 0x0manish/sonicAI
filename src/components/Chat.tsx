@@ -546,6 +546,20 @@ export default function Chat() {
         return;
       }
       
+      // Check if the response was successful
+      if (!statsData.success) {
+        console.error('Unsuccessful response from Stats API:', statsData.error);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content: `Error: ${statsData.error || 'Failed to fetch Sonic chain stats'}`,
+          },
+        ]);
+        setIsLoading(false);
+        return;
+      }
+      
       // Format the response
       let responseContent = formatSonicStats(statsData);
       
@@ -842,8 +856,8 @@ export default function Chat() {
       // Add pool ID
       formattedResponse += `**Pool ID:** \`${poolId}\`\n\n`;
       
-      // Add link to Sega DEX
-      formattedResponse += `You can view this pool on [Sega DEX](https://sega.so/pools/${poolId})`;
+      // Add link to Sega DEX with target="_blank" to open in new tab
+      formattedResponse += `You can view this pool on [Sega DEX](https://sega.so/liquidity-pools/ "Open in new tab")`;
       
       return formattedResponse;
     } catch (error) {
