@@ -426,7 +426,7 @@ export default function Chat() {
           ...prev,
           {
             role: 'assistant',
-            content: `Sorry, I can only send SOL on testnet, not on mainnet. My current network is **${infoData.networkInfo.network}**. For security reasons, mainnet transactions are disabled.`,
+            content: `Sorry, I can only send SOL on testnet, not on mainnet. My current network is ${infoData.networkInfo.network}. For security reasons, mainnet transactions are disabled.`,
           },
         ]);
         setIsLoading(false);
@@ -434,7 +434,11 @@ export default function Chat() {
       }
       
       // Show wallet info before sending transaction
-      const walletInfoMessage = `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet:\n\nMy wallet address:\n\`\`\`\n${infoData.publicKey}\n\`\`\`\nCurrent balance: **${infoData.balance.toFixed(4)} SOL**\nNetwork: **${infoData.networkInfo.network}**`;
+      const walletInfoMessage = `🔑 My Wallet Information\n\n` +
+        `Public Key: ${infoData.publicKey}\n\n` +
+        `Network: ${infoData.networkInfo.network}\n\n` +
+        `Testnet Balance: ${infoData.testnetBalance.toFixed(4)} SOL\n\n` +
+        `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet.`;
       
       setMessages((prev) => [
         ...prev,
@@ -444,7 +448,7 @@ export default function Chat() {
         },
       ]);
       
-      // Call the transaction API
+      // Now send the transaction
       const response = await fetch('/api/transaction', {
         method: 'POST',
         headers: {
@@ -452,20 +456,35 @@ export default function Chat() {
         },
         body: JSON.stringify({ recipient, amount }),
       });
-
-      const transactionData = await response.json();
       
-      // Format the response
-      let responseContent = '';
-      if (!response.ok || !transactionData.success) {
-        responseContent = `Transaction failed: ${transactionData.error || 'Unknown error'}`;
-      } else {
-        responseContent = `**Transaction successful!** 🎉\n\nSent ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)}\n\nTransaction signature:\n\`\`\`\n${transactionData.signature}\n\`\`\``;
+      const data = await response.json();
+      
+      if (!response.ok || !data.success) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Sorry, the transaction failed. ${data.error || 'Please try again later.'}`,
+          },
+        ]);
+        setIsLoading(false);
+        return;
       }
-
-      // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
-      setIsLoading(false);
+      
+      // Format the transaction response
+      const transactionMessage = `✅ Transaction Successful!\n\n` +
+        `Amount: ${amount} SOL\n\n` +
+        `Recipient: ${recipient}\n\n` +
+        `Transaction ID: ${data.signature}\n\n` +
+        `Network: ${infoData.networkInfo.network}`;
+      
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: transactionMessage,
+        },
+      ]);
     } catch (error) {
       console.error('Error sending transaction:', error);
       setMessages((prev) => [
@@ -511,45 +530,46 @@ export default function Chat() {
         
         if (isTestnetQuery) {
           // Just show testnet balance
-          responseContent = `**My Testnet Wallet Balance**\n\n`;
+          responseContent = `🔑 My Wallet Information\n\n`;
+          responseContent += `Public Key: ${walletData.publicKey}\n\n`;
+          responseContent += `Network: ${walletData.networkInfo.network}\n\n`;
+          
           if (walletData.testnetBalance !== null) {
-            responseContent += `My testnet wallet balance is **${walletData.testnetBalance.toFixed(4)} SOL**.\n\n`;
+            responseContent += `Testnet Balance: ${walletData.testnetBalance.toFixed(4)} SOL\n\n`;
           } else {
-            responseContent += `I couldn't retrieve my testnet balance at the moment. Please try again later.\n\n`;
+            responseContent += `Testnet Balance: Unable to retrieve\n\n`;
           }
-          responseContent += `My wallet address is:\n\`\`\`\n${walletData.publicKey}\n\`\`\`\n\n`;
-          responseContent += `_Note: For security reasons, I can only send SOL on testnet, not on mainnet._`;
+          
+          responseContent += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
         } else if (isMainnetQuery) {
           // Just show mainnet balance
-          responseContent = `**My Mainnet Wallet Balance**\n\n`;
-          responseContent += `My mainnet wallet balance is **${walletData.balance.toFixed(4)} SOL**.\n\n`;
-          responseContent += `My wallet address is:\n\`\`\`\n${walletData.publicKey}\n\`\`\`\n\n`;
-          responseContent += `_Note: For security reasons, I can only send SOL on testnet, not on mainnet._`;
+          responseContent = `🔑 My Wallet Information\n\n`;
+          responseContent += `Public Key: ${walletData.publicKey}\n\n`;
+          responseContent += `Network: ${walletData.networkInfo.network}\n\n`;
+          responseContent += `Mainnet Balance: ${walletData.balance.toFixed(4)} SOL\n\n`;
+          responseContent += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
         } else if (isAddressQuery) {
           // Just show wallet address
-          responseContent = `**My Wallet Address**\n\n`;
-          responseContent += `My wallet address is:\n\`\`\`\n${walletData.publicKey}\n\`\`\`\n\n`;
-          responseContent += `_Note: For security reasons, I can only send SOL on testnet, not on mainnet._`;
+          responseContent = `🔑 My Wallet Information\n\n`;
+          responseContent += `Public Key: ${walletData.publicKey}\n\n`;
+          responseContent += `Network: ${walletData.networkInfo.network}\n\n`;
+          responseContent += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
         } else {
           // Format successful response with full information
-          responseContent = `**My Wallet Information**\n\n`;
-          responseContent += `Public Key:\n\`\`\`\n${walletData.publicKey}\n\`\`\`\n\n`;
-          
-          // Network information
-          responseContent += `Network: **${walletData.networkInfo.network}**\n\n`;
-          
-          // Mainnet balance
-          responseContent += `Mainnet Balance: **${walletData.balance !== undefined ? walletData.balance.toFixed(4) : '0.0000'} SOL**\n\n`;
+          responseContent = `🔑 My Wallet Information\n\n`;
+          responseContent += `Public Key: ${walletData.publicKey}\n\n`;
+          responseContent += `Network: ${walletData.networkInfo.network}\n\n`;
+          responseContent += `Mainnet Balance: ${walletData.balance !== undefined ? walletData.balance.toFixed(4) : '0.0000'} SOL\n\n`;
           
           // Testnet balance if available
           if (walletData.testnetBalance !== null) {
-            responseContent += `Testnet Balance: **${walletData.testnetBalance.toFixed(4)} SOL**\n\n`;
+            responseContent += `Testnet Balance: ${walletData.testnetBalance.toFixed(4)} SOL\n\n`;
           } else {
-            responseContent += `Testnet Balance: **Unable to retrieve**\n\n`;
+            responseContent += `Testnet Balance: Unable to retrieve\n\n`;
           }
           
           // Add note about sending SOL
-          responseContent += `_Note: For security reasons, I can only send SOL on testnet, not on mainnet._`;
+          responseContent += `Note: For security reasons, I can only send SOL on testnet, not on mainnet.`;
         }
       }
 

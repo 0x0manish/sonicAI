@@ -217,9 +217,11 @@ export function initializeAgentWallet(config: AgentWalletConfig): AgentWallet | 
   try {
     // Validate the private key format
     if (!config.privateKey || config.privateKey.trim() === '') {
-      console.error('Cannot initialize wallet: Private key is missing');
+      console.error('Cannot initialize wallet: Private key is missing or empty');
       return null;
     }
+    
+    console.log(`Private key length: ${config.privateKey.length}`);
     
     // Check if the private key is in the correct format
     let privateKeyBytes: Uint8Array;
@@ -239,7 +241,7 @@ export function initializeAgentWallet(config: AgentWalletConfig): AgentWallet | 
     
     // Validate RPC URLs
     if (!config.rpcUrl || config.rpcUrl.trim() === '') {
-      console.error('Cannot initialize wallet: RPC URL is missing');
+      console.error('Cannot initialize wallet: RPC URL is missing or empty');
       return null;
     }
     
@@ -250,6 +252,7 @@ export function initializeAgentWallet(config: AgentWalletConfig): AgentWallet | 
     
     try {
       // Create the wallet instance
+      console.log('Creating wallet instance...');
       agentWalletInstance = new AgentWallet(config);
       console.log('Agent wallet initialized successfully');
       console.log('- Public key:', agentWalletInstance.getPublicKey());

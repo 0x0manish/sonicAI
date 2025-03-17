@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentWallet, initializeAgentWallet, formatTransactionResult } from '@/lib/agent-wallet';
-import { AGENT_WALLET_CONFIG, validateWalletConfig } from '@/lib/wallet-config';
+import { AGENT_WALLET_CONFIG, validateWalletConfig, updateWalletConfigFromEnv } from '@/lib/wallet-config';
 import { isValidSonicAddress } from '@/lib/wallet-utils';
 
 export const runtime = 'edge';
@@ -12,6 +12,9 @@ export const runtime = 'edge';
  */
 export async function POST(req: NextRequest) {
   try {
+    // Update wallet configuration from environment variables
+    updateWalletConfigFromEnv();
+    
     // Parse request body
     const body = await req.json();
     const { recipient, amount, forceMainnet } = body;
@@ -50,6 +53,17 @@ export async function POST(req: NextRequest) {
     let agentWallet = getAgentWallet();
     if (!agentWallet) {
       agentWallet = initializeAgentWallet(AGENT_WALLET_CONFIG);
+      
+      // If still null after initialization, return error
+      if (!agentWallet) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to initialize agent wallet' 
+          },
+          { status: 500 }
+        );
+      }
     }
     
     // Get network info
@@ -95,6 +109,9 @@ export async function POST(req: NextRequest) {
  */
 export async function GET() {
   try {
+    // Update wallet configuration from environment variables
+    updateWalletConfigFromEnv();
+    
     // Validate wallet configuration
     if (!validateWalletConfig()) {
       return NextResponse.json(
@@ -107,6 +124,17 @@ export async function GET() {
     let agentWallet = getAgentWallet();
     if (!agentWallet) {
       agentWallet = initializeAgentWallet(AGENT_WALLET_CONFIG);
+      
+      // If still null after initialization, return error
+      if (!agentWallet) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to initialize agent wallet' 
+          },
+          { status: 500 }
+        );
+      }
     }
     
     // Get wallet info

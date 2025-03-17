@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentWallet, initializeAgentWallet } from '@/lib/agent-wallet';
-import { AGENT_WALLET_CONFIG, validateWalletConfig } from '@/lib/wallet-config';
+import { AGENT_WALLET_CONFIG, validateWalletConfig, updateWalletConfigFromEnv } from '@/lib/wallet-config';
 
 export const runtime = 'edge';
 
@@ -10,6 +10,9 @@ export const runtime = 'edge';
  */
 export async function GET() {
   try {
+    // Update wallet configuration from environment variables
+    updateWalletConfigFromEnv();
+    
     // Validate wallet configuration
     if (!validateWalletConfig()) {
       return NextResponse.json(
@@ -25,6 +28,17 @@ export async function GET() {
     let agentWallet = getAgentWallet();
     if (!agentWallet) {
       agentWallet = initializeAgentWallet(AGENT_WALLET_CONFIG);
+      
+      // If still null after initialization, return error
+      if (!agentWallet) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to initialize agent wallet' 
+          },
+          { status: 500 }
+        );
+      }
     }
     
     // Get wallet info
