@@ -161,36 +161,105 @@ export function formatSwapComputation(response: SwapComputeResponse): string {
   
   const data = response.data;
   
-  // Format input amount
+  // Define known token decimals
+  const SONIC_MINT = 'mrujEYaN1oyQXDHeYNxBYpxWKVkQ2XsGxfznpifu4aL';
+  const tokenDecimals: Record<string, number> = {
+    [SOL_MINT]: 9,
+    [SONIC_MINT]: 9,
+    // Add other known tokens here
+  };
+  
+  // Get token symbols
+  const tokenSymbols: Record<string, string> = {
+    [SOL_MINT]: 'SOL',
+    [SONIC_MINT]: 'SONIC',
+    // Add other known tokens here
+  };
+  
+  // Format input amount with proper decimals
   let inputAmount: string;
+  let inputSymbol = tokenSymbols[data.inputMint] || data.inputMint.slice(0, 4) + '...' + data.inputMint.slice(-4);
+  
   if (data.inputMint === SOL_MINT) {
     const solAmount = lamportsToSol(Number(data.inputAmount));
-    inputAmount = `${solAmount.toFixed(4)} SOL`;
+    inputAmount = `${solAmount.toFixed(6)} ${inputSymbol}`;
+  } else if (data.inputMint === SONIC_MINT) {
+    // SONIC has 9 decimals
+    const rawAmount = Number(data.inputAmount);
+    const formattedAmount = (rawAmount / Math.pow(10, 9)).toFixed(6);
+    inputAmount = `${formattedAmount} ${inputSymbol}`;
   } else {
-    inputAmount = data.inputAmount;
+    // For other tokens, check if we know the decimals
+    const decimals = tokenDecimals[data.inputMint] || 0;
+    if (decimals > 0) {
+      const rawAmount = Number(data.inputAmount);
+      const formattedAmount = (rawAmount / Math.pow(10, decimals)).toFixed(6);
+      inputAmount = `${formattedAmount} ${inputSymbol}`;
+    } else {
+      // If we don't know the decimals, just show the raw amount
+      inputAmount = `${data.inputAmount} ${inputSymbol}`;
+    }
   }
   
-  // Format output amount
+  // Format output amount with proper decimals
   let outputAmount: string;
+  let outputSymbol = tokenSymbols[data.outputMint] || data.outputMint.slice(0, 4) + '...' + data.outputMint.slice(-4);
+  
   if (data.outputMint === SOL_MINT) {
     const solAmount = lamportsToSol(Number(data.outputAmount));
-    outputAmount = `${solAmount.toFixed(4)} SOL`;
+    outputAmount = `${solAmount.toFixed(6)} ${outputSymbol}`;
+  } else if (data.outputMint === SONIC_MINT) {
+    // SONIC has 9 decimals
+    const rawAmount = Number(data.outputAmount);
+    const formattedAmount = (rawAmount / Math.pow(10, 9)).toFixed(6);
+    outputAmount = `${formattedAmount} ${outputSymbol}`;
   } else {
-    // For non-SOL tokens, we'd ideally fetch the token metadata to get decimals
-    // For now, just show the raw amount
-    outputAmount = data.outputAmount;
+    // For other tokens, check if we know the decimals
+    const decimals = tokenDecimals[data.outputMint] || 0;
+    if (decimals > 0) {
+      const rawAmount = Number(data.outputAmount);
+      const formattedAmount = (rawAmount / Math.pow(10, decimals)).toFixed(6);
+      outputAmount = `${formattedAmount} ${outputSymbol}`;
+    } else {
+      // If we don't know the decimals, just show the raw amount
+      outputAmount = `${data.outputAmount} ${outputSymbol}`;
+    }
   }
   
   // Format the swap details
   let result = `🔄 Swap Details\n\n`;
-  result += `From: ${inputAmount} (${data.inputMint.slice(0, 4)}...${data.inputMint.slice(-4)})\n`;
-  result += `To: ${outputAmount} (${data.outputMint.slice(0, 4)}...${data.outputMint.slice(-4)})\n`;
+  result += `From: ${inputAmount}\n`;
+  result += `To: ${outputAmount}\n`;
   result += `Price Impact: ${data.priceImpactPct.toFixed(2)}%\n`;
   result += `Slippage Tolerance: ${data.slippageBps / 100}%\n`;
   
   if (data.routePlan.length > 0) {
     const route = data.routePlan[0];
-    result += `Fee: ${route.feeAmount} (${route.feeRate / 100}%)\n`;
+    
+    // Format fee amount with proper decimals
+    let feeAmount: string;
+    if (data.inputMint === SOL_MINT) {
+      const feeSol = lamportsToSol(Number(route.feeAmount));
+      feeAmount = `${feeSol.toFixed(6)} ${inputSymbol}`;
+    } else if (data.inputMint === SONIC_MINT) {
+      // SONIC has 9 decimals
+      const rawFee = Number(route.feeAmount);
+      const formattedFee = (rawFee / Math.pow(10, 9)).toFixed(6);
+      feeAmount = `${formattedFee} ${inputSymbol}`;
+    } else {
+      // For other tokens, check if we know the decimals
+      const decimals = tokenDecimals[data.inputMint] || 0;
+      if (decimals > 0) {
+        const rawFee = Number(route.feeAmount);
+        const formattedFee = (rawFee / Math.pow(10, decimals)).toFixed(6);
+        feeAmount = `${formattedFee} ${inputSymbol}`;
+      } else {
+        // If we don't know the decimals, just show the raw amount
+        feeAmount = `${route.feeAmount} ${inputSymbol}`;
+      }
+    }
+    
+    result += `Fee: ${feeAmount} (${route.feeRate / 100}%)\n`;
     result += `Pool: ${route.poolId.slice(0, 4)}...${route.poolId.slice(-4)}\n`;
   }
   
