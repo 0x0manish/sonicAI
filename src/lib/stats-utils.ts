@@ -35,24 +35,18 @@ export async function getSonicStats(): Promise<SonicStats> {
       // Add a timestamp to prevent caching
       const timestamp = new Date().getTime();
       const url = `https://api.sega.so/api/main/info?_t=${timestamp}`;
+      console.log('Direct API URL with timestamp:', url);
       
-      // Create an AbortController for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      // Call the Sega API with timeout
+      // Call the Sega API with strong cache-busting headers
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'accept': 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        },
-        signal: controller.signal
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       });
-      
-      // Clear the timeout
-      clearTimeout(timeoutId);
       
       // Check if response is OK
       if (!response.ok) {
@@ -60,17 +54,9 @@ export async function getSonicStats(): Promise<SonicStats> {
         throw new Error(`API returned status ${response.status}`);
       }
 
-      // Parse the response
-      const responseText = await response.text();
-      console.log('API response text:', responseText.substring(0, 100) + '...');
-      
-      // Check if response is valid JSON
-      if (!responseText.trim() || !responseText.trim().startsWith('{')) {
-        console.error('Invalid JSON response');
-        throw new Error('Invalid JSON response');
-      }
-      
-      const data = JSON.parse(responseText) as SonicStatsApiResponse;
+      // Parse the response directly as JSON
+      const data = await response.json() as SonicStatsApiResponse;
+      console.log('API response data:', data);
       
       // Check for API success
       if (!data.success || !data.data) {
@@ -94,7 +80,7 @@ export async function getSonicStats(): Promise<SonicStats> {
         };
       }
 
-      // Return the stats
+      // Return the stats directly from the API response
       console.log('Successfully fetched stats:', data.data);
       return {
         success: true,
@@ -138,6 +124,6 @@ export function formatSonicStats(stats: SonicStats): string {
   if (!stats.success) {
     return `Sorry, I couldn't fetch the latest Sonic chain stats. ${stats.error || 'Please try again later.'}`;
   }
-
-  return `Sonic Chain Stats:\n\nTotal Value Locked (TVL): $${stats.tvl.toLocaleString()}\n24-hour Volume: $${stats.volume24.toLocaleString()}`;
+  
+  return `Sonic Chain Stats:\n\nTotal Value Locked (TVL): $${Number(stats.tvl).toFixed(2)}\n24-hour Volume: $${Number(stats.volume24).toFixed(2)}`;
 } 

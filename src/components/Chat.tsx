@@ -8,17 +8,38 @@ import { isValidSonicAddress } from '@/lib/wallet-utils';
 import { isValidTokenMint, formatTokenPrices } from '@/lib/token-utils';
 import { formatSonicStats } from '@/lib/stats-utils';
 import { isValidPoolId, formatLiquidityPoolList } from '@/lib/liquidity-pool-utils';
+import { validateAIConfig } from '@/lib/ai-config';
+import { getEnvVars, logEnvVars } from '@/lib/env-utils';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, request test tokens by typing 'faucet [your wallet address]', ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool (DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4) with $50,000 liquidity, $15,000 daily volume, 0.3% fees, 15% APR, and a price of 0.0025 SOL per SONIC, or list all available liquidity pools! 🚀"
+      content: "Hi! I'm Sonic AI. Ask me about Sonic technologies, ecosystem projects, wallet balances, token prices, or how to interact with the Sonic blockchain. 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const env = getEnvVars();
+
+  // Validate AI configuration on mount
+  useEffect(() => {
+    // Log environment variables for debugging
+    logEnvVars();
+    
+    const isValid = validateAIConfig();
+    if (!isValid) {
+      if (env.NODE_ENV === 'development') {
+        setConfigError('Warning: AI configuration is incomplete. The app will work with limited functionality in development mode.');
+        console.warn('AI configuration validation failed in development mode');
+      } else {
+        setConfigError('Error: AI configuration is invalid. Please check your environment variables.');
+        console.error('AI configuration validation failed');
+      }
+    }
+  }, []);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -67,26 +88,65 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Check if the message is a faucet request
+      const faucetRegex = /(?:faucet|send\s+(?:test\s+)?tokens\s+(?:to)?)\s+([1-9A-HJ-NP-Za-km-z]{32,44})/i;
+      const faucetMatch = content.match(faucetRegex);
+      
+      if (faucetMatch && faucetMatch[1] && isValidSonicAddress(faucetMatch[1])) {
+        const address = faucetMatch[1];
+        await requestFaucetTokens(address);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about wallet balance
+      const walletBalanceRegex = /(?:balance|wallet).*?([1-9A-HJ-NP-Za-km-z]{32,44})/i;
+      const walletMatch = content.match(walletBalanceRegex);
+      
+      if (walletMatch && walletMatch[1] && isValidSonicAddress(walletMatch[1])) {
+        const address = walletMatch[1];
+        await checkWalletBalance(address);
+        setIsLoading(false);
+        return;
+      }
+
       // Check if the input is a wallet address
       if (isValidSonicAddress(content)) {
-        const walletInfo = await checkWalletBalance(content);
-        setMessages((prev) => [...prev, { role: 'assistant' as const, content: walletInfo }]);
+        await checkWalletBalance(content);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about token price
+      const tokenPriceRegex = /(?:price|token).*?([1-9A-HJ-NP-Za-km-z]{32,44})/i;
+      const tokenMatch = content.match(tokenPriceRegex);
+      
+      if (tokenMatch && tokenMatch[1] && isValidTokenMint(tokenMatch[1])) {
+        const mint = tokenMatch[1];
+        await checkTokenPrice([mint]);
         setIsLoading(false);
         return;
       }
 
       // Check if the input is a token mint address
       if (isValidTokenMint(content)) {
-        const tokenInfo = await checkTokenPrice([content]);
-        setMessages((prev) => [...prev, { role: 'assistant' as const, content: tokenInfo }]);
+        await checkTokenPrice([content]);
         setIsLoading(false);
         return;
       }
 
-      // Check if the input is a liquidity pool ID
-      if (isValidPoolId(content)) {
-        const poolInfo = await checkLiquidityPool(content);
-        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
+      // Check if the message is asking about Sonic stats
+      const statsRegex = /(?:stats|statistics|tvl|volume)/i;
+      if (statsRegex.test(content)) {
+        await checkSonicStats();
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about the agent's wallet
+      const agentWalletRegex = /(?:your|agent|bot).*?(?:wallet|balance)/i;
+      if (agentWalletRegex.test(content)) {
+        await checkAgentWalletInfo();
         setIsLoading(false);
         return;
       }
@@ -98,6 +158,14 @@ export default function Chat() {
       if (poolMatch && poolMatch[1] && isValidPoolId(poolMatch[1])) {
         const poolId = poolMatch[1];
         const poolInfo = await checkLiquidityPool(poolId);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the input is a liquidity pool ID
+      if (isValidPoolId(content)) {
+        const poolInfo = await checkLiquidityPool(content);
         setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
         setIsLoading(false);
         return;
@@ -178,6 +246,14 @@ export default function Chat() {
 
       console.log('Wallet API response status:', response.status);
       
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from wallet API:', response.status, errorText);
+        const errorMessage = `Error: Failed to get wallet balance: ${response.status} ${response.statusText}`;
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
+      }
+      
       // Get the response as text first
       const responseText = await response.text();
       console.log('Wallet response text preview:', responseText.substring(0, 200) + '...');
@@ -185,15 +261,9 @@ export default function Chat() {
       // Check if the response is empty
       if (!responseText.trim()) {
         console.error('Empty response from wallet API');
-        return 'Error: Received empty response from the server when fetching wallet balance';
-      }
-      
-      // Check if the response is not JSON but has text content
-      if (responseText.trim().startsWith('I ') || 
-          responseText.trim().startsWith('Sorry') || 
-          !responseText.trim().startsWith('{')) {
-        console.log('Received text response instead of JSON from wallet API');
-        return responseText;
+        const errorMessage = 'Error: Received empty response from the server when fetching wallet balance';
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
       }
       
       // Try to parse the JSON
@@ -204,18 +274,18 @@ export default function Chat() {
         console.error('Error parsing JSON response from wallet API:', parseError);
         // If we can't parse it as JSON but it's a text response, return it directly
         if (typeof responseText === 'string' && responseText.length > 0) {
+          setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseText }]);
           return responseText;
         }
-        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        const errorMessage = `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
       }
       
       // Format the response
       let responseContent = '';
       
-      if (!response.ok) {
-        // Handle HTTP error but still try to use the error message from the response
-        responseContent = `Error: ${walletData.error || `Failed to get wallet balance: ${response.status} ${response.statusText}`}`;
-      } else if (walletData.error) {
+      if (walletData.error) {
         // Handle application error
         responseContent = `Error: ${walletData.error}`;
       } else {
@@ -236,25 +306,20 @@ export default function Chat() {
 
       // Add the response to the chat
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
-      setIsLoading(false);
       return responseContent;
     } catch (error) {
       console.error('Error checking wallet balance:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant' as const,
-          content: 'Sorry, there was an error checking the wallet balance. The service might be temporarily unavailable. Please try again later.',
-        },
-      ]);
-      setIsLoading(false);
-      return 'Sorry, there was an error checking the wallet balance. The service might be temporarily unavailable. Please try again later.';
+      const errorMessage = 'Sorry, there was an error checking the wallet balance. The service might be temporarily unavailable. Please try again later.';
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+      return errorMessage;
     }
   };
 
   // Helper function to request faucet tokens
   const requestFaucetTokens = async (address: string) => {
     try {
+      console.log('Requesting faucet tokens for address:', address);
+      
       // Call the faucet API
       const response = await fetch('/api/faucet', {
         method: 'POST',
@@ -263,6 +328,16 @@ export default function Chat() {
         },
         body: JSON.stringify({ address }),
       });
+
+      console.log('Faucet API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from faucet API:', response.status, errorText);
+        const errorMessage = `Error: Failed to request tokens from the faucet: ${response.status} ${response.statusText}`;
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return;
+      }
 
       const faucetData = await response.json();
       
@@ -280,7 +355,6 @@ export default function Chat() {
 
       // Add the response to the chat
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
-      setIsLoading(false);
     } catch (error) {
       console.error('Error requesting faucet tokens:', error);
       setMessages((prev) => [
@@ -290,7 +364,6 @@ export default function Chat() {
           content: 'Sorry, there was an error connecting to the faucet service. Please try again later.',
         },
       ]);
-      setIsLoading(false);
     }
   };
 
@@ -320,7 +393,9 @@ export default function Chat() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Error response from token price API:', response.status, errorText);
-        return `Error: Failed to get token prices: ${response.status} ${response.statusText}`;
+        const errorMessage = `Error: Failed to get token prices: ${response.status} ${response.statusText}`;
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
       }
       
       // Get the response as text first
@@ -330,15 +405,9 @@ export default function Chat() {
       // Check if the response is empty
       if (!responseText.trim()) {
         console.error('Empty response from token price API');
-        return 'Error: Received empty response from the server when fetching token prices';
-      }
-      
-      // Check if the response is not JSON but has text content
-      if (responseText.trim().startsWith('I ') || 
-          responseText.trim().startsWith('Sorry') || 
-          !responseText.trim().startsWith('{')) {
-        console.log('Received text response instead of JSON from token price API');
-        return responseText;
+        const errorMessage = 'Error: Received empty response from the server when fetching token prices';
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
       }
       
       // Try to parse the JSON
@@ -349,16 +418,19 @@ export default function Chat() {
         console.error('Error parsing JSON response from token price API:', parseError);
         // If we can't parse it as JSON but it's a text response, return it directly
         if (typeof responseText === 'string' && responseText.length > 0) {
+          setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseText }]);
           return responseText;
         }
-        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        const errorMessage = `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+        return errorMessage;
       }
       
       // Use the shared formatting function
       let responseContent = formatTokenPrices(priceData, mints);
       
       // Add markdown formatting for the web interface
-      responseContent = responseContent.replace(/\$([\d,]+)/g, '**$$$1**');
+      responseContent = responseContent.replace(/\$([\d,]+(?:\.\d+)?)/g, '**$$$1**');
       
       if (mints.length === 1) {
         responseContent = `**Token Price Information**\n\n${responseContent}`;
@@ -368,19 +440,12 @@ export default function Chat() {
 
       // Add the response to the chat
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
-      setIsLoading(false);
       return responseContent;
     } catch (error) {
       console.error('Error checking token price:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant' as const,
-          content: 'Sorry, there was an error fetching token prices. The service might be temporarily unavailable. Please try again later.',
-        },
-      ]);
-      setIsLoading(false);
-      return 'Sorry, there was an error fetching token prices. The service might be temporarily unavailable. Please try again later.';
+      const errorMessage = 'Sorry, there was an error fetching token prices. The service might be temporarily unavailable. Please try again later.';
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }]);
+      return errorMessage;
     }
   };
 
@@ -390,8 +455,8 @@ export default function Chat() {
       console.log('Fetching Sonic chain stats...');
       // Add a timestamp to prevent caching
       const timestamp = new Date().getTime();
-      const url = `/api/stats?_t=${timestamp}&fallback=true`;
-      console.log('Stats API URL with timestamp and fallback:', url);
+      const url = `/api/stats?_t=${timestamp}`;
+      console.log('Stats API URL with timestamp:', url);
       
       // Call the stats API
       const response = await fetch(url, {
@@ -494,109 +559,6 @@ export default function Chat() {
         {
           role: 'assistant' as const,
           content: 'Sorry, there was an error fetching Sonic chain stats. The service might be temporarily unavailable. Please try again later.',
-        },
-      ]);
-      setIsLoading(false);
-    }
-  };
-
-  // Helper function to send a transaction
-  const sendTransaction = async (recipient: string, amount: number) => {
-    try {
-      // First, get the agent wallet info to check if it's configured
-      const infoResponse = await fetch('/api/transaction', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      const infoData = await infoResponse.json();
-      
-      if (!infoResponse.ok || !infoData.success) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant' as const,
-            content: `Sorry, I can't send transactions at the moment. ${infoData.error || 'The agent wallet is not properly configured.'}`,
-          },
-        ]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Check if we're on mainnet and inform the user that we can only send on testnet
-      if (!infoData.networkInfo.isTestnet) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant' as const,
-            content: `Sorry, I can only send SOL on testnet, not on mainnet. My current network is ${infoData.networkInfo.network}. For security reasons, mainnet transactions are disabled.`,
-          },
-        ]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Show wallet info before sending transaction
-      const walletInfoMessage = `🔑 My Wallet Information\n\n` +
-        `Public Key: ${infoData.publicKey}\n\n` +
-        `Network: ${infoData.networkInfo.network}\n\n` +
-        `Testnet Balance: ${infoData.testnetBalance.toFixed(4)} SOL\n\n` +
-        `I'll send ${amount} SOL to ${recipient.slice(0, 6)}...${recipient.slice(-4)} from my wallet.`;
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant' as const,
-          content: walletInfoMessage,
-        },
-      ]);
-      
-      // Now send the transaction
-      const response = await fetch('/api/transaction', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ recipient, amount }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok || !data.success) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant' as const,
-            content: `Sorry, the transaction failed. ${data.error || 'Please try again later.'}`,
-          },
-        ]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Format the transaction response
-      const transactionMessage = `✅ Transaction Successful!\n\n` +
-        `Amount: ${amount} SOL\n\n` +
-        `Recipient: ${recipient}\n\n` +
-        `Transaction ID: ${data.signature}\n\n` +
-        `Network: ${infoData.networkInfo.network}`;
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant' as const,
-          content: transactionMessage,
-        },
-      ]);
-    } catch (error) {
-      console.error('Error sending transaction:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant' as const,
-          content: 'Sorry, there was an error processing the transaction. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
       setIsLoading(false);
@@ -806,39 +768,39 @@ export default function Chat() {
           // Add liquidity information
           formattedResponse += `**Liquidity:**\n`;
           if (pool.liquidity) {
-            formattedResponse += `- Total Value Locked: $${Number(pool.liquidity.tvl).toLocaleString()}\n`;
-            formattedResponse += `- Base Reserve: ${Number(pool.liquidity.baseReserve).toLocaleString()} ${pool.tokenPair.baseSymbol}\n`;
-            formattedResponse += `- Quote Reserve: ${Number(pool.liquidity.quoteReserve).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+            formattedResponse += `- Total Value Locked: $${Number(pool.liquidity.tvl).toFixed(2)}\n`;
+            formattedResponse += `- Base Reserve: ${Number(pool.liquidity.baseReserve).toFixed(4)} ${pool.tokenPair.baseSymbol}\n`;
+            formattedResponse += `- Quote Reserve: ${Number(pool.liquidity.quoteReserve).toFixed(4)} ${pool.tokenPair.quoteSymbol}\n\n`;
           } else if (pool.tvl) {
-            formattedResponse += `- Total Value Locked: $${Number(pool.tvl).toLocaleString()}\n\n`;
+            formattedResponse += `- Total Value Locked: $${Number(pool.tvl).toFixed(2)}\n\n`;
           }
           
           // Add volume and fees
           if (pool.volume) {
-            formattedResponse += `**Volume (24h):** $${Number(pool.volume.h24).toLocaleString()}\n`;
+            formattedResponse += `**Volume (24h):** $${Number(pool.volume.h24).toFixed(2)}\n`;
           } else if (pool.day && pool.day.volume) {
-            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString()}\n`;
+            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toFixed(2)}\n`;
           }
           
           if (pool.fees) {
             formattedResponse += `**Fees:**\n`;
-            formattedResponse += `- LP Fee: ${Number(pool.fees.lpFeeRate) * 100}%\n`;
-            formattedResponse += `- Platform Fee: ${Number(pool.fees.platformFeeRate) * 100}%\n`;
-            formattedResponse += `- Total Fee: ${Number(pool.fees.totalFeeRate) * 100}%\n\n`;
+            formattedResponse += `- LP Fee: ${(Number(pool.fees.lpFeeRate) * 100).toFixed(2)}%\n`;
+            formattedResponse += `- Platform Fee: ${(Number(pool.fees.platformFeeRate) * 100).toFixed(2)}%\n`;
+            formattedResponse += `- Total Fee: ${(Number(pool.fees.totalFeeRate) * 100).toFixed(2)}%\n\n`;
           } else if (pool.feeRate) {
-            formattedResponse += `**Fee Rate:** ${Number(pool.feeRate) * 100}%\n\n`;
+            formattedResponse += `**Fee Rate:** ${(Number(pool.feeRate) * 100).toFixed(2)}%\n\n`;
           }
           
           // Add APR if available
           if (pool.apr) {
-            formattedResponse += `**APR:** ${Number(pool.apr) * 100}%\n\n`;
+            formattedResponse += `**APR:** ${(Number(pool.apr) * 100).toFixed(2)}%\n\n`;
           } else if (pool.day && pool.day.apr) {
             formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
           }
           
           // Add current price
           if (pool.price) {
-            formattedResponse += `**Current Price:** 1 ${pool.tokenPair.baseSymbol} = ${Number(pool.price).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+            formattedResponse += `**Current Price:** 1 ${pool.tokenPair.baseSymbol} = ${Number(pool.price).toFixed(6)} ${pool.tokenPair.quoteSymbol}\n\n`;
           }
         } else {
           // Old API format
@@ -855,13 +817,13 @@ export default function Chat() {
           
           // Add pool metrics
           if (pool.tvl !== undefined) {
-            formattedResponse += `**Liquidity:** $${Number(pool.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+            formattedResponse += `**Liquidity:** $${Number(pool.tvl).toFixed(2)}\n`;
           }
           if (pool.day && pool.day.volume !== undefined) {
-            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toFixed(2)}\n`;
           }
           if (pool.day && pool.day.volumeFee !== undefined) {
-            formattedResponse += `**Fees (24h):** $${Number(pool.day.volumeFee).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+            formattedResponse += `**Fees (24h):** $${Number(pool.day.volumeFee).toFixed(2)}\n`;
           }
           if (pool.day && pool.day.apr !== undefined) {
             formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
@@ -979,7 +941,7 @@ export default function Chat() {
               Your guide to the first atomic SVM chain for sovereign economies
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, request test tokens, ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool (DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4) with $50,000 liquidity, $15,000 daily volume, 0.3% fees, 15% APR, and a price of 0.0025 SOL per SONIC, or list all available liquidity pools.
+              Ask me about Sonic technologies, ecosystem projects, wallet balances, token prices, or how to interact with the Sonic blockchain.
             </p>
           </div>
         </div>
@@ -992,6 +954,12 @@ export default function Chat() {
 
   return (
     <div className="flex flex-col h-full">
+      {configError && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{configError}</span>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {messages.map((message, index) => (
           <ChatMessage key={index} message={message} />

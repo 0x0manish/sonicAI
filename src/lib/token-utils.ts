@@ -132,6 +132,7 @@ export function formatTokenPrices(response: TokenPriceResponse, mints: string[])
     const price = response.prices[mint];
     
     if (price !== undefined) {
+      // Format price with 4 decimal places for consistency
       result = `The current price of token ${mint.slice(0, 6)}...${mint.slice(-4)} is $${price.toFixed(4)}.`;
     } else {
       result = `I couldn't find price information for the token with mint address ${mint.slice(0, 6)}...${mint.slice(-4)}. Please verify that this is a valid token mint address on Sonic.`;
@@ -143,6 +144,7 @@ export function formatTokenPrices(response: TokenPriceResponse, mints: string[])
       const price = response.prices[mint];
       
       if (price !== undefined) {
+        // Format price with 4 decimal places for consistency
         result += `- ${mint.slice(0, 6)}...${mint.slice(-4)}: $${price.toFixed(4)}\n`;
       } else {
         result += `- ${mint.slice(0, 6)}...${mint.slice(-4)}: Price not available\n`;

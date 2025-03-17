@@ -26,7 +26,7 @@ export async function generateAIResponse(messages: Message[]): Promise<string> {
     return response.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
   } catch (error) {
     console.error('Error generating AI response:', error);
-    return 'Sorry, there was an error processing your request. Please try again later.';
+    throw error; // Rethrow to allow the caller to handle the error
   }
 }
 
@@ -41,6 +41,12 @@ export async function streamAIResponse(messages: Message[]) {
   ];
 
   try {
+    // Validate OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OpenAI API key is not configured');
+    }
+
+    // Create streaming completion
     const stream = await openai.chat.completions.create({
       model: config.model,
       messages: fullMessages as any,

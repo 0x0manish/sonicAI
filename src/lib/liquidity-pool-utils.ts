@@ -138,42 +138,45 @@ export function formatLiquidityPoolInfo(poolResponse: LiquidityPoolResponse): st
       message += `*Base Token:* ${pool.tokenPair.baseSymbol} (\`${pool.tokenPair.baseMint}\`)\n`;
       message += `*Quote Token:* ${pool.tokenPair.quoteSymbol} (\`${pool.tokenPair.quoteMint}\`)\n\n`;
       
-      // Add liquidity information
+      // Add liquidity information with consistent formatting
       message += `*Liquidity:*\n`;
       if (pool.liquidity) {
-        message += `- Total Value Locked: $${Number(pool.liquidity.tvl).toLocaleString()}\n`;
-        message += `- Base Reserve: ${Number(pool.liquidity.baseReserve).toLocaleString()} ${pool.tokenPair.baseSymbol}\n`;
-        message += `- Quote Reserve: ${Number(pool.liquidity.quoteReserve).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+        // Format with 2 decimal places for consistency
+        message += `- Total Value Locked: $${Number(pool.liquidity.tvl).toFixed(2)}\n`;
+        // Format with appropriate decimal places for token amounts
+        message += `- Base Reserve: ${Number(pool.liquidity.baseReserve).toFixed(4)} ${pool.tokenPair.baseSymbol}\n`;
+        message += `- Quote Reserve: ${Number(pool.liquidity.quoteReserve).toFixed(4)} ${pool.tokenPair.quoteSymbol}\n\n`;
       } else {
-        message += `- Total Value Locked: $${Number(pool.tvl || 0).toLocaleString()}\n\n`;
+        // Format with 2 decimal places for consistency
+        message += `- Total Value Locked: $${Number(pool.tvl || 0).toFixed(2)}\n\n`;
       }
       
-      // Add volume and fees
+      // Add volume and fees with consistent formatting
       if (pool.volume) {
-        message += `*Volume (24h):* $${Number(pool.volume.h24).toLocaleString()}\n`;
+        message += `*Volume (24h):* $${Number(pool.volume.h24).toFixed(2)}\n`;
       } else if (pool.day) {
-        message += `*Volume (24h):* $${Number(pool.day.volume).toLocaleString()}\n`;
+        message += `*Volume (24h):* $${Number(pool.day.volume).toFixed(2)}\n`;
       }
       
       if (pool.fees) {
         message += `*Fees:*\n`;
-        message += `- LP Fee: ${Number(pool.fees.lpFeeRate) * 100}%\n`;
-        message += `- Platform Fee: ${Number(pool.fees.platformFeeRate) * 100}%\n`;
-        message += `- Total Fee: ${Number(pool.fees.totalFeeRate) * 100}%\n\n`;
+        message += `- LP Fee: ${(Number(pool.fees.lpFeeRate) * 100).toFixed(2)}%\n`;
+        message += `- Platform Fee: ${(Number(pool.fees.platformFeeRate) * 100).toFixed(2)}%\n`;
+        message += `- Total Fee: ${(Number(pool.fees.totalFeeRate) * 100).toFixed(2)}%\n\n`;
       } else if (pool.feeRate) {
-        message += `*Fee Rate:* ${Number(pool.feeRate) * 100}%\n\n`;
+        message += `*Fee Rate:* ${(Number(pool.feeRate) * 100).toFixed(2)}%\n\n`;
       }
       
-      // Add APR if available
+      // Add APR if available with consistent formatting
       if (pool.apr) {
-        message += `*APR:* ${Number(pool.apr) * 100}%\n\n`;
+        message += `*APR:* ${(Number(pool.apr) * 100).toFixed(2)}%\n\n`;
       } else if (pool.day) {
         message += `*APR (24h):* ${(pool.day.apr * 100).toFixed(2)}%\n\n`;
       }
       
-      // Add current price
+      // Add current price with consistent formatting
       if (pool.price) {
-        message += `*Current Price:* 1 ${pool.tokenPair.baseSymbol} = ${Number(pool.price).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+        message += `*Current Price:* 1 ${pool.tokenPair.baseSymbol} = ${Number(pool.price).toFixed(6)} ${pool.tokenPair.quoteSymbol}\n\n`;
       }
       
       // Add pool ID
@@ -194,14 +197,14 @@ export function formatLiquidityPoolInfo(poolResponse: LiquidityPoolResponse): st
       result += `- ${pool.mintA.symbol}: \`${pool.mintA.address}\`\n`;
       result += `- ${pool.mintB.symbol}: \`${pool.mintB.address}\`\n\n`;
       
-      // Add pool metrics
-      result += `*Liquidity:* $${pool.tvl.toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
-      result += `*Volume (24h):* $${pool.day.volume.toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
-      result += `*Fees (24h):* $${pool.day.volumeFee.toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+      // Add pool metrics with consistent formatting
+      result += `*Liquidity:* $${Number(pool.tvl).toFixed(2)}\n`;
+      result += `*Volume (24h):* $${Number(pool.day.volume).toFixed(2)}\n`;
+      result += `*Fees (24h):* $${Number(pool.day.volumeFee).toFixed(2)}\n`;
       result += `*APR (24h):* ${(pool.day.apr * 100).toFixed(2)}%\n\n`;
       
-      // Add price information
-      result += `*Current Price:* 1 ${pool.mintA.symbol} = ${pool.price.toFixed(6)} ${pool.mintB.symbol}\n`;
+      // Add price information with consistent formatting
+      result += `*Current Price:* 1 ${pool.mintA.symbol} = ${Number(pool.price).toFixed(6)} ${pool.mintB.symbol}\n`;
       result += `*Pool ID:* \`${pool.id}\`\n\n`;
       
       // Add link to Sega DEX
@@ -467,17 +470,19 @@ export function formatLiquidityPoolList(poolsResponse: any): string {
         // Format each pool
         result += `**${i + 1}. ${pool.mintA.symbol || 'Unknown'}/${pool.mintB.symbol || 'Unknown'}**\n`;
         
-        // Add liquidity information
+        // Add liquidity information with consistent formatting
         if (pool.tvl !== undefined) {
-          result += `- Liquidity: $${Number(pool.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          // Format with 2 decimal places for consistency
+          result += `- Liquidity: $${Number(pool.tvl).toFixed(2)}\n`;
         }
         
-        // Add volume information
+        // Add volume information with consistent formatting
         if (pool.day && pool.day.volume !== undefined) {
-          result += `- Volume (24h): $${Number(pool.day.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          // Format with 2 decimal places for consistency
+          result += `- Volume (24h): $${Number(pool.day.volume).toFixed(2)}\n`;
         }
         
-        // Add APR information
+        // Add APR information with consistent formatting
         if (pool.day && pool.day.apr !== undefined) {
           result += `- APR (24h): ${(Number(pool.day.apr) * 100).toFixed(2)}%\n`;
         }

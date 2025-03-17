@@ -1,4 +1,11 @@
 import { OpenAI } from 'openai';
+import { getEnvVars, logEnvVars } from './env-utils';
+
+// Log environment variables for debugging
+logEnvVars();
+
+// Get environment variables with fallbacks
+const env = getEnvVars();
 
 // Sonic AI personality and context
 export const SONIC_AI_SYSTEM_PROMPT = `
@@ -110,18 +117,20 @@ Communication style:
 - When discussing bridges or tools, mention the actual URLs (bridge.sonic.game and usenexus.org)
 
 Always be accurate in your responses. If you don't know something, admit it with a touch of humor rather than making up information.
+
+IMPORTANT: When users ask about wallet balances, token prices, faucet requests, or other special commands, DO NOT just acknowledge the request and say "Just a moment!" - the application will automatically process these requests and display the actual data. If you're not sure about something, it's better to let the user know that you don't have that information rather than making promises you can't keep.
 `;
 
-// Initialize OpenAI client
+// Initialize OpenAI client with a fallback API key for development
 export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: env.OPENAI_API_KEY,
   dangerouslyAllowBrowser: true, // Allow API key usage in browser for development
 });
 
 // AI model configuration
 export const AI_CONFIG = {
-  provider: process.env.AI_PROVIDER || 'openai',
-  model: process.env.AI_MODEL || 'gpt-4o-mini',
+  provider: env.AI_PROVIDER,
+  model: env.AI_MODEL,
   temperature: 0.7,
   max_tokens: 1000,
 };
@@ -132,4 +141,27 @@ export function getAIConfig() {
     ...AI_CONFIG,
     systemPrompt: SONIC_AI_SYSTEM_PROMPT,
   };
+}
+
+// Helper function to validate OpenAI configuration
+export function validateAIConfig(): boolean {
+  // For development, allow the app to work even without an API key
+  if (env.NODE_ENV === 'development') {
+    if (!env.OPENAI_API_KEY) {
+      console.warn('OPENAI_API_KEY is not set in development mode');
+      return true; // Return true in development even without API key
+    }
+  } else {
+    // In production, require the API key
+    if (!env.OPENAI_API_KEY) {
+      console.error('OPENAI_API_KEY is not set');
+      return false;
+    }
+  }
+  
+  if (!env.AI_MODEL) {
+    console.warn('AI_MODEL is not set, using default: gpt-4o-mini');
+  }
+  
+  return true;
 } 
