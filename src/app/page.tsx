@@ -11,12 +11,12 @@ export default function Home() {
           {/* Chat header */}
           <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="px-4 py-4 flex items-center">
-              <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center shadow-sm mr-3">
+              <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shadow-sm mr-4">
                 <Image 
                   src="/logo.jpeg" 
                   alt="Sonic AI" 
-                  width={28} 
-                  height={28} 
+                  width={40} 
+                  height={40} 
                   className="object-cover"
                   priority
                 />

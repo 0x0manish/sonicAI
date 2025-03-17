@@ -201,16 +201,16 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-0.5">
           {isUser ? (
-            <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
-              <UserIcon className="w-3.5 h-3.5 text-gray-700 dark:text-gray-300" />
+            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+              <UserIcon className="w-4.5 h-4.5 text-gray-700 dark:text-gray-300" />
             </div>
           ) : (
-            <div className="w-6 h-6 rounded-full overflow-hidden">
+            <div className="w-8 h-8 rounded-full overflow-hidden">
               <Image 
                 src="/logo.jpeg" 
                 alt="Sonic AI" 
-                width={24} 
-                height={24} 
+                width={32} 
+                height={32} 
                 className="object-cover"
                 priority
               />
