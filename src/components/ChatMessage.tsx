@@ -8,6 +8,44 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 
+// Add custom styles for markdown content
+const markdownStyles = `
+  .markdown-content pre {
+    margin: 1em 0;
+    background-color: rgb(31, 41, 55);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    overflow-x: auto;
+  }
+  
+  .dark .markdown-content pre {
+    background-color: rgb(17, 24, 39);
+  }
+  
+  .markdown-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875em;
+  }
+  
+  .markdown-content pre code {
+    color: rgb(229, 231, 235);
+    padding: 0;
+    background-color: transparent;
+  }
+  
+  .markdown-content p code,
+  .markdown-content .inline-code {
+    background-color: rgb(243, 244, 246);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+  }
+  
+  .dark .markdown-content p code,
+  .dark .markdown-content .inline-code {
+    background-color: rgb(31, 41, 55);
+  }
+`;
+
 interface ChatMessageProps {
   message: Message;
 }
@@ -20,7 +58,7 @@ function SafeMarkdown({ children }: { children: string }) {
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
       // Only handle errors from this component
-      if (event.message && event.message.includes('markdown')) {
+      if (event.message && (event.message.includes('markdown') || event.message.includes('hydration'))) {
         console.error('Markdown rendering error:', event);
         setHasError(true);
         // Prevent the error from bubbling up
@@ -40,7 +78,7 @@ function SafeMarkdown({ children }: { children: string }) {
   if (hasError) {
     // Fallback UI when markdown rendering fails
     return (
-      <div className="text-gray-800 dark:text-gray-200">
+      <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
         {children}
       </div>
     );
@@ -57,18 +95,17 @@ function SafeMarkdown({ children }: { children: string }) {
           code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || '');
             return !inline ? (
-              <div className="not-prose">
-                <pre className="bg-gray-800 dark:bg-gray-900 rounded-md p-3 overflow-x-auto">
-                  <code
-                    className={match ? `language-${match[1]}` : ''}
-                    {...props}
-                  >
-                    {children}
-                  </code>
-                </pre>
-              </div>
+              // For block code, we'll let the CSS handle the styling
+              <pre>
+                <code
+                  className={match ? `language-${match[1]}` : ''}
+                  {...props}
+                >
+                  {children}
+                </code>
+              </pre>
             ) : (
-              <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded" {...props}>
+              <code className="inline-code" {...props}>
                 {children}
               </code>
             );
@@ -76,24 +113,27 @@ function SafeMarkdown({ children }: { children: string }) {
           // Fix paragraph wrapping for pre elements
           p: ({ node, children, ...props }: any) => {
             // Check if children contains a pre element
-            const hasPreElement = React.Children.toArray(children).some(
+            const childArray = React.Children.toArray(children);
+            const hasBlockElement = childArray.some(
               (child) => 
                 React.isValidElement(child) && 
                 typeof child.type === 'string' && 
-                child.type === 'div' && 
-                child.props && 
-                typeof child.props === 'object' && 
-                'className' in child.props && 
-                child.props.className === 'not-prose'
+                (child.type === 'pre' || child.type === 'div')
             );
             
-            // If it has a pre element, just render the children without the p wrapper
-            if (hasPreElement) {
+            // If it has a block element, just render the children without the p wrapper
+            if (hasBlockElement) {
               return <>{children}</>;
             }
             
             // Otherwise, render as normal paragraph
             return <p {...props}>{children}</p>;
+          },
+          // Add a custom pre component to ensure it's not wrapped in a paragraph
+          pre: ({ node, children, ...props }: any) => {
+            // Don't add any additional classes or styling here
+            // The styling will be handled by the CSS in markdownStyles
+            return <pre {...props}>{children}</pre>;
           },
           // Customize links to open in new tab and handle errors
           a: ({ node, children, href, ...props }: any) => {
@@ -156,6 +196,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   
   return (
     <div className={`px-4 py-4 ${isUser ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700'} border-b border-gray-100 dark:border-gray-800`}>
+      {/* Add style tag for markdown content */}
+      <style dangerouslySetInnerHTML={{ __html: markdownStyles }} />
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-0.5">
           {isUser ? (

@@ -7,12 +7,13 @@ import { Message } from '@/lib/ai-utils';
 import { isValidSonicAddress } from '@/lib/wallet-utils';
 import { isValidTokenMint, formatTokenPrices } from '@/lib/token-utils';
 import { formatSonicStats } from '@/lib/stats-utils';
+import { isValidPoolId, formatLiquidityPoolList } from '@/lib/liquidity-pool-utils';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, request test tokens by typing 'faucet [your wallet address]', or ask me to send SOL to any address! 🚀"
+      content: "Hi! I'm Sonic AI. I can help with Sonic technologies like HyperGrid, Sorada, and Rush, as well as ecosystem projects like Sega DEX. Ask me about wallet balances, token prices, chain stats, DeFi activities, request test tokens by typing 'faucet [your wallet address]', ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool, or list all available liquidity pools! 🚀"
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -59,160 +60,93 @@ export default function Chat() {
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim()) return;
-    
+
     // Add user message to chat
     const userMessage: Message = { role: 'user', content };
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // Check if the message is a wallet address (direct address)
+      // Check if the input is a wallet address
       if (isValidSonicAddress(content)) {
-        await checkWalletBalance(content);
-        return;
-      }
-
-      // Check if the message is a token mint address (direct address)
-      if (isValidTokenMint(content)) {
-        await checkTokenPrice([content]);
-        return;
-      }
-
-      // Check if the message is asking to check a wallet balance
-      const walletCheckRegex = /(?:check|view|show|get|what(?:'|')?s|what is).*(?:wallet|balance|account).*?([\w\d]{32,44})/i;
-      const walletMatch = content.match(walletCheckRegex);
-      
-      if (walletMatch && walletMatch[1]) {
-        const address = walletMatch[1].trim();
-        
-        // Validate wallet address
-        if (isValidSonicAddress(address)) {
-          await checkWalletBalance(address);
-          return;
-        }
-      }
-
-      // Check if the message is asking for the agent's wallet info
-      const agentWalletRegex = /(?:your|agent|bot|ai|do you have|what is your|what'?s your).*(?:wallet|address|balance|public key)|(?:testnet|mainnet|devnet).*(?:balance|wallet)|(?:wallet|balance)(?:\?|$)/i;
-      if (agentWalletRegex.test(content)) {
-        await checkAgentWalletInfo();
-        return;
-      }
-
-      // Check if the message is asking for token price
-      const tokenPriceRegex = /(?:price|cost|value|worth|how much).*(?:token|mint|coin).*?([\w\d]{32,44})/i;
-      const tokenPriceMatch = content.match(tokenPriceRegex);
-      
-      if (tokenPriceMatch && tokenPriceMatch[1]) {
-        const mint = tokenPriceMatch[1].trim();
-        
-        // Validate token mint address
-        if (isValidTokenMint(mint)) {
-          await checkTokenPrice([mint]);
-          return;
-        }
-      }
-
-      // Check if the message is asking for Sonic chain stats
-      const statsRegex = /(?:stats|statistics|tvl|volume|locked value|total value|chain stats)/i;
-      if (statsRegex.test(content)) {
-        await checkSonicStats();
-        return;
-      }
-
-      // Check if the message is asking for test tokens (faucet request)
-      const faucetRegex = /(?:faucet|test tokens|send me tokens|airdrop|test sol).*?([\w\d]{32,44})/i;
-      const faucetMatch = content.match(faucetRegex);
-      
-      if (faucetMatch && faucetMatch[1]) {
-        const address = faucetMatch[1].trim();
-        
-        // Validate wallet address
-        if (isValidSonicAddress(address)) {
-          await requestFaucetTokens(address);
-          return;
-        }
-      }
-
-      // Check if the message is asking for a transaction
-      const transactionRegex = /(?:send|transfer|pay|tip).*?(\d+(?:\.\d+)?).*?(?:sol|sonic).*?(?:to|address|wallet).*?([\w\d]{32,44})/i;
-      const transactionMatch = content.match(transactionRegex);
-      
-      // Also check for general transaction requests
-      const generalTransactionRegex = /(?:send|transfer|pay|tip).*?(?:sol|sonic)|(?:can you send sol)/i;
-
-      if (transactionMatch && transactionMatch[1] && transactionMatch[2]) {
-        const amount = parseFloat(transactionMatch[1].trim());
-        const recipient = transactionMatch[2].trim();
-        
-        // Validate wallet address
-        if (isValidSonicAddress(recipient)) {
-          await sendTransaction(recipient, amount);
-          return;
-        }
-      } else if (generalTransactionRegex.test(content) && !transactionMatch) {
-        // Handle general transaction requests
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: 'I can send SOL to any address. Please specify the amount and recipient address like this: "send 0.1 SOL to ADDRESS".',
-          },
-        ]);
+        const walletInfo = await checkWalletBalance(content);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: walletInfo }]);
         setIsLoading(false);
         return;
       }
 
-      // Prepare messages for API
-      const chatMessages = [...messages, userMessage];
+      // Check if the input is a token mint address
+      if (isValidTokenMint(content)) {
+        const tokenInfo = await checkTokenPrice([content]);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: tokenInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the input is a liquidity pool ID
+      if (isValidPoolId(content)) {
+        const poolInfo = await checkLiquidityPool(content);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about a liquidity pool
+      const poolRegex = /(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i;
+      const poolMatch = content.match(poolRegex);
       
-      // Call API
+      if (poolMatch && poolMatch[1] && isValidPoolId(poolMatch[1])) {
+        const poolId = poolMatch[1];
+        const poolInfo = await checkLiquidityPool(poolId);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about the SOL-SONIC pool
+      const solSonicRegex = /(?:sol[\s-]sonic|wsol[\s-]sonic).*?(?:pool|lp|liquidity|pair)/i;
+      if (solSonicRegex.test(content)) {
+        // SOL-SONIC pool ID
+        const solSonicPoolId = 'DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4';
+        const poolInfo = await checkLiquidityPool(solSonicPoolId);
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if the message is asking about pools list
+      const poolsListRegex = /(?:list|show|get|display).*?(?:liquidity pools|pools|lps)/i;
+      if (poolsListRegex.test(content)) {
+        const poolsInfo = await checkLiquidityPools();
+        setMessages((prev) => [...prev, { role: 'assistant' as const, content: poolsInfo }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Process with AI if not a special command
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: chatMessages }),
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to get response: ${response.status} ${response.statusText}`);
+        throw new Error(`Error: ${response.status}`);
       }
 
-      // Add an empty assistant message that we'll update
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
-      // Handle streaming response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let responseText = '';
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value);
-          responseText += chunk;
-          
-          // Update the last message with the accumulated text
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1] = {
-              role: 'assistant',
-              content: responseText,
-            };
-            return newMessages;
-          });
-        }
-      }
+      const data = await response.json();
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: data.content }]);
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
-          content: 'Sorry, there was an error processing your request. Please try again.',
+          role: 'assistant' as const,
+          content: 'Sorry, there was an error processing your message. Please try again later.',
         },
       ]);
     } finally {
@@ -221,7 +155,7 @@ export default function Chat() {
   };
 
   // Helper function to check wallet balance
-  const checkWalletBalance = async (address: string) => {
+  const checkWalletBalance = async (address: string): Promise<string> => {
     try {
       // Call the wallet API
       const response = await fetch('/api/wallet', {
@@ -261,18 +195,20 @@ export default function Chat() {
       }
 
       // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
       setIsLoading(false);
+      return responseContent;
     } catch (error) {
       console.error('Error checking wallet balance:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error checking the wallet balance. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
       setIsLoading(false);
+      return 'Sorry, there was an error checking the wallet balance. The service might be temporarily unavailable. Please try again later.';
     }
   };
 
@@ -303,14 +239,14 @@ export default function Chat() {
       }
 
       // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
       setIsLoading(false);
     } catch (error) {
       console.error('Error requesting faucet tokens:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error connecting to the faucet service. Please try again later.',
         },
       ]);
@@ -319,7 +255,7 @@ export default function Chat() {
   };
 
   // Helper function to check token prices
-  const checkTokenPrice = async (mints: string[]) => {
+  const checkTokenPrice = async (mints: string[]): Promise<string> => {
     try {
       // Call the token price API
       const response = await fetch('/api/token-price', {
@@ -345,18 +281,20 @@ export default function Chat() {
       }
 
       // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
       setIsLoading(false);
+      return responseContent;
     } catch (error) {
       console.error('Error checking token price:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error fetching token prices. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
       setIsLoading(false);
+      return 'Sorry, there was an error fetching token prices. The service might be temporarily unavailable. Please try again later.';
     }
   };
 
@@ -380,14 +318,14 @@ export default function Chat() {
       // The stats are already formatted with $$ in the formatSonicStats function
       
       // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
       setIsLoading(false);
     } catch (error) {
       console.error('Error checking Sonic chain stats:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error fetching Sonic chain stats. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
@@ -412,7 +350,7 @@ export default function Chat() {
         setMessages((prev) => [
           ...prev,
           {
-            role: 'assistant',
+            role: 'assistant' as const,
             content: `Sorry, I can't send transactions at the moment. ${infoData.error || 'The agent wallet is not properly configured.'}`,
           },
         ]);
@@ -425,7 +363,7 @@ export default function Chat() {
         setMessages((prev) => [
           ...prev,
           {
-            role: 'assistant',
+            role: 'assistant' as const,
             content: `Sorry, I can only send SOL on testnet, not on mainnet. My current network is ${infoData.networkInfo.network}. For security reasons, mainnet transactions are disabled.`,
           },
         ]);
@@ -443,7 +381,7 @@ export default function Chat() {
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: walletInfoMessage,
         },
       ]);
@@ -463,7 +401,7 @@ export default function Chat() {
         setMessages((prev) => [
           ...prev,
           {
-            role: 'assistant',
+            role: 'assistant' as const,
             content: `Sorry, the transaction failed. ${data.error || 'Please try again later.'}`,
           },
         ]);
@@ -481,7 +419,7 @@ export default function Chat() {
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: transactionMessage,
         },
       ]);
@@ -490,7 +428,7 @@ export default function Chat() {
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error processing the transaction. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
@@ -574,18 +512,243 @@ export default function Chat() {
       }
 
       // Add the response to the chat
-      setMessages((prev) => [...prev, { role: 'assistant', content: responseContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: responseContent }]);
       setIsLoading(false);
     } catch (error) {
       console.error('Error checking agent wallet info:', error);
       setMessages((prev) => [
         ...prev,
         {
-          role: 'assistant',
+          role: 'assistant' as const,
           content: 'Sorry, there was an error checking my wallet information. The service might be temporarily unavailable. Please try again later.',
         },
       ]);
       setIsLoading(false);
+    }
+  };
+
+  // Helper function to check liquidity pool information
+  const checkLiquidityPool = async (poolId: string): Promise<string> => {
+    try {
+      console.log('Checking liquidity pool:', poolId);
+      
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/liquidity-pool?_t=${timestamp}`;
+      console.log('API URL with timestamp:', url);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify({ poolId, fallback: true }),
+      });
+
+      console.log('Liquidity pool API response status:', response.status);
+      
+      if (!response.ok) {
+        let errorMessage = `Failed to fetch liquidity pool data: ${response.status} ${response.statusText}`;
+        
+        try {
+          const errorData = await response.json();
+          console.error('Error fetching liquidity pool data:', response.status, errorData);
+          if (errorData && errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (parseError) {
+          console.error('Could not parse error response:', parseError);
+          try {
+            const errorText = await response.text();
+            console.error('Error response text:', errorText);
+          } catch (textError) {
+            console.error('Could not get error response text:', textError);
+          }
+        }
+        
+        if (response.status === 404) {
+          return `I couldn't find information for the liquidity pool with ID: ${poolId}. This pool may not exist or might not be available on Sega DEX.`;
+        }
+        
+        return `I'm sorry, but I encountered an issue while fetching information for this liquidity pool. ${errorMessage}`;
+      }
+
+      let data;
+      try {
+        const responseText = await response.text();
+        console.log('Response text preview:', responseText.substring(0, 200) + '...');
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError);
+        return `I'm sorry, but I encountered an error parsing the response from the liquidity pool API. Please try again later.`;
+      }
+      
+      console.log('Liquidity pool data:', data);
+      
+      if (!data.success || !data.data) {
+        console.error('Failed to fetch liquidity pool data:', data.error);
+        return `I couldn't retrieve information for this liquidity pool. ${data.error || 'The service might be temporarily unavailable.'}`;
+      }
+
+      const pool = data.data[0];
+      if (!pool) {
+        console.error('No pool data found in response');
+        return `I couldn't find any data for the liquidity pool with ID: ${poolId}.`;
+      }
+      
+      // Format the response
+      let formattedResponse = `## ${pool.mintA?.symbol || pool.tokenPair?.baseSymbol || 'Unknown'}-${pool.mintB?.symbol || pool.tokenPair?.quoteSymbol || 'Unknown'} Liquidity Pool\n\n`;
+      
+      try {
+        // Check if the response is in the new format (with tokenPair)
+        if (pool.tokenPair) {
+          // Add token information
+          formattedResponse += `**Token Pair:** ${pool.tokenPair.baseSymbol}/${pool.tokenPair.quoteSymbol}\n`;
+          formattedResponse += `**Base Token:** ${pool.tokenPair.baseSymbol} (${pool.tokenPair.baseMint})\n`;
+          formattedResponse += `**Quote Token:** ${pool.tokenPair.quoteSymbol} (${pool.tokenPair.quoteMint})\n\n`;
+          
+          // Add liquidity information
+          formattedResponse += `**Liquidity:**\n`;
+          if (pool.liquidity) {
+            formattedResponse += `- Total Value Locked: $${Number(pool.liquidity.tvl).toLocaleString()}\n`;
+            formattedResponse += `- Base Reserve: ${Number(pool.liquidity.baseReserve).toLocaleString()} ${pool.tokenPair.baseSymbol}\n`;
+            formattedResponse += `- Quote Reserve: ${Number(pool.liquidity.quoteReserve).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+          } else if (pool.tvl) {
+            formattedResponse += `- Total Value Locked: $${Number(pool.tvl).toLocaleString()}\n\n`;
+          }
+          
+          // Add volume and fees
+          if (pool.volume) {
+            formattedResponse += `**Volume (24h):** $${Number(pool.volume.h24).toLocaleString()}\n`;
+          } else if (pool.day && pool.day.volume) {
+            formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString()}\n`;
+          }
+          
+          if (pool.fees) {
+            formattedResponse += `**Fees:**\n`;
+            formattedResponse += `- LP Fee: ${Number(pool.fees.lpFeeRate) * 100}%\n`;
+            formattedResponse += `- Platform Fee: ${Number(pool.fees.platformFeeRate) * 100}%\n`;
+            formattedResponse += `- Total Fee: ${Number(pool.fees.totalFeeRate) * 100}%\n\n`;
+          } else if (pool.feeRate) {
+            formattedResponse += `**Fee Rate:** ${Number(pool.feeRate) * 100}%\n\n`;
+          }
+          
+          // Add APR if available
+          if (pool.apr) {
+            formattedResponse += `**APR:** ${Number(pool.apr) * 100}%\n\n`;
+          } else if (pool.day && pool.day.apr) {
+            formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
+          }
+          
+          // Add current price
+          if (pool.price) {
+            formattedResponse += `**Current Price:** 1 ${pool.tokenPair.baseSymbol} = ${Number(pool.price).toLocaleString()} ${pool.tokenPair.quoteSymbol}\n\n`;
+          }
+        } else {
+          // Old API format
+          // Add token information
+          formattedResponse += `**Token Pair:** ${pool.mintA.symbol}/${pool.mintB.symbol}\n`;
+          formattedResponse += `**Token Addresses:**\n`;
+          formattedResponse += `- ${pool.mintA.symbol}: \`${pool.mintA.address}\`\n`;
+          formattedResponse += `- ${pool.mintB.symbol}: \`${pool.mintB.address}\`\n\n`;
+          
+          // Add pool metrics
+          formattedResponse += `**Liquidity:** $${Number(pool.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          formattedResponse += `**Volume (24h):** $${Number(pool.day.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          formattedResponse += `**Fees (24h):** $${Number(pool.day.volumeFee).toLocaleString(undefined, { maximumFractionDigits: 2 })}\n`;
+          formattedResponse += `**APR (24h):** ${(Number(pool.day.apr) * 100).toFixed(2)}%\n\n`;
+          
+          // Add price information
+          formattedResponse += `**Current Price:** 1 ${pool.mintA.symbol} = ${Number(pool.price).toFixed(6)} ${pool.mintB.symbol}\n\n`;
+        }
+      } catch (formatError) {
+        console.error('Error formatting pool data:', formatError);
+        // Continue with basic information if there's an error formatting
+      }
+      
+      // Add pool ID
+      formattedResponse += `**Pool ID:** \`${poolId}\`\n\n`;
+      
+      // Add link to Sega DEX
+      formattedResponse += `You can view this pool on [Sega DEX](https://sega.so/pools/${poolId})`;
+      
+      return formattedResponse;
+    } catch (error) {
+      console.error('Error in checkLiquidityPool:', error);
+      return `I'm sorry, but I encountered an unexpected error while fetching information for this liquidity pool. Please try again later.`;
+    }
+  };
+
+  // Helper function to check liquidity pools
+  const checkLiquidityPools = async (): Promise<string> => {
+    try {
+      console.log('Fetching liquidity pools from API...');
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/liquidity-pools?_t=${timestamp}&fallback=true`;
+      console.log('API URL with timestamp and fallback:', url);
+      
+      // Call the liquidity pools API
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      console.log('API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from API:', response.status, errorText);
+        return `Error: Failed to get liquidity pools: ${response.status} ${response.statusText}`;
+      }
+      
+      try {
+        // Get the response as text first
+        const responseText = await response.text();
+        console.log('Response text preview:', responseText.substring(0, 200) + '...');
+        
+        // Check if the response is empty or not JSON
+        if (!responseText.trim()) {
+          console.error('Empty response from API');
+          return 'Error: Received empty response from the server';
+        }
+        
+        // Try to parse the JSON
+        let poolsData;
+        try {
+          poolsData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
+          return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+        }
+        
+        console.log('API response data structure:', 
+          'success:', poolsData.success, 
+          'data exists:', !!poolsData.data,
+          'count:', poolsData.data?.count,
+          'pools count:', poolsData.data?.data?.length
+        );
+        
+        if (!poolsData.success || !poolsData.data) {
+          console.error('Error in pools data:', poolsData.error);
+          return `I couldn't fetch the list of liquidity pools. ${poolsData.error || 'The service might be temporarily unavailable.'}`;
+        }
+        
+        // Use the formatLiquidityPoolList function to format the response
+        return formatLiquidityPoolList(poolsData);
+      } catch (parseError) {
+        console.error('Error processing response:', parseError);
+        return 'Sorry, there was an error processing the liquidity pools data. The service might be temporarily unavailable. Please try again later.';
+      }
+    } catch (error) {
+      console.error('Error checking liquidity pools:', error);
+      return 'Sorry, there was an error fetching the liquidity pools. The service might be temporarily unavailable. Please try again later.';
     }
   };
 
@@ -600,7 +763,7 @@ export default function Chat() {
               Your guide to the first atomic SVM chain for sovereign economies
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, request test tokens, or ask me to send SOL to any address.
+              Ask me about HyperGrid, Sorada, Rush, Sega DEX, or how to deploy on Sonic! You can also check wallet balances, token prices, chain stats, request test tokens, ask me to send SOL to any address, get information about liquidity pools like the SOL-SONIC pool, or list all available liquidity pools.
             </p>
           </div>
         </div>

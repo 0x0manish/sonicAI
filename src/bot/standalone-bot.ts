@@ -10,6 +10,7 @@ import { getTokenPrices, formatTokenPrices, isValidTokenMint } from '../lib/toke
 import { getSonicStats, formatSonicStats } from '../lib/stats-utils';
 import { initializeAgentWallet, getAgentWallet, isAgentWalletInitialized } from '../lib/agent-wallet';
 import { AGENT_WALLET_CONFIG, validateWalletConfig, updateWalletConfigFromEnv } from '../lib/wallet-config';
+import { getLiquidityPoolById, formatLiquidityPoolInfo, isValidPoolId, getLiquidityPools, formatLiquidityPoolList } from '../lib/liquidity-pool-utils';
 
 // Load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
@@ -228,67 +229,118 @@ const walletRegex = /(?:your|agent|bot|ai|do you have|what is your|what'?s your)
 // Regex for detecting transaction requests
 const transactionRegex = /(?:send|transfer|pay|tip).*?(?:sol|sonic)|(?:can you send sol)/i;
 
-// Welcome message
+// Add a start command
 bot.start(async (ctx) => {
-  // Reset session for this user
-  const userId = ctx.from?.id;
-  if (userId) {
-    userSessions[userId] = { messages: [] };
-  }
-  
-  const welcomeMessage = `
-Hey there! I'm Sonic AI, your go-to expert on all things Sonic and SVM tech. 🚀
+  try {
+    console.log('Start command received from user:', ctx.from?.id);
+    
+    // Reset session for this user
+    const userId = ctx.from?.id;
+    if (userId) {
+      userSessions[userId] = { messages: [] };
+      console.log('Reset session for user:', userId);
+    }
+    
+    const welcomeMessage = `
+*Welcome to the Sonic Agent Bot!* 🚀
 
-I can tell you about:
-• HyperGrid - Solana's first concurrent scaling framework
-• Sorada - lightning-fast data architecture (5ms reads!)
-• Rush - composable gaming primitives on-chain
-• Sega - the leading DEX and liquidity protocol on Sonic (https://sega.so/)
+I'm your assistant for interacting with the Sonic blockchain. Here's what I can do:
 
-Need help with:
-• Bridging funds (via bridge.sonic.game)
-• Deploying programs on Sonic
-• Finding resources like Explorer or Faucet
-• Checking your wallet balance (use /balance <address> or just send your wallet address)
-• Checking token prices (use /price <mint_address> or just send a token mint address)
-• Checking Sonic chain stats (use /stats or ask about TVL/volume)
-• DeFi activities like swaps and liquidity provision
-• Getting test tokens (use /faucet <address>)
-• Sending SOL from my wallet to any address (use /send <amount> <recipient_address> or ask me to send SOL)
+*Check Balances & Prices:*
+- Check wallet balances with /wallet <address>
+- Check token prices with /token <mint>
+- View Sonic chain stats with /stats
 
-What can I speed up for you today?
+*Liquidity Pools:*
+- Get info about any pool with /pool <pool_id>
+- List available pools with /pools
+- Check the SOL-SONIC pool with /solsonic
+
+*Transactions:*
+- Request test tokens with /faucet <address>
+- Send SOL with /send <amount> <address>
+
+*Need Help?*
+Type /help to see all available commands.
+
+*Note:* For security reasons, transactions are only enabled on testnet.
 `;
-  
-  await ctx.reply(welcomeMessage);
+
+    console.log('Sending welcome message to user:', userId);
+    await ctx.replyWithMarkdown(welcomeMessage);
+    console.log('Welcome message sent successfully');
+  } catch (error) {
+    console.error('Error in start command handler:', error);
+    // Send a plain text fallback message if Markdown fails
+    try {
+      await ctx.reply("Welcome to the Sonic Agent Bot! I'm having trouble displaying the full welcome message. Please type /help to see available commands.");
+    } catch (fallbackError) {
+      console.error('Error sending fallback message:', fallbackError);
+    }
+  }
 });
 
-// Help command
-bot.help((ctx) => {
-  ctx.reply(`
-Here are some commands you can use:
-/start - Start a new conversation
+// Define the help message
+const helpMessage = `
+*Sonic Agent Bot Commands*
+
+*Basic Commands:*
+/start - Start the bot and see welcome message
 /help - Show this help message
-/reset - Reset the conversation history
-/balance <wallet_address> - Check the balance of a Sonic wallet
-/price <token_mint_address> - Check the price of a token on Sonic
-/stats - Check Sonic chain TVL and 24-hour volume
-/faucet <wallet_address> - Request test tokens from the Sega faucet
-/send <amount> <recipient_address> - Send SOL from the agent wallet to a recipient
-/mywallet - Show my wallet information including public key and balances
+/wallet <address> - Check wallet balance
+/token <mint> - Check token price
+/stats - Show Sonic chain statistics
+/faucet <address> - Request test tokens from faucet
+/send <amount> <address> - Send SOL to an address
+/pool <pool_id> - Show information about a specific liquidity pool
+/pools [page] [pageSize] - List available liquidity pools
+/solsonic - Show information about the SOL-SONIC liquidity pool
 
-You can also ask me about:
-- Sonic's technologies (HyperGrid, Sorada, Rush)
-- Ecosystem projects like Sega DEX (https://sega.so/)
-- How to bridge funds to Sonic
-- How to deploy programs on Sonic
-- DeFi activities like swaps and providing liquidity
-- Token prices (just send a token mint address or ask "what's the price of token <mint_address>")
-- Sonic chain stats (just ask about TVL or volume)
-- Sending SOL (just ask "send 0.1 SOL to <address>")
-- My wallet information (just ask "what's your wallet address" or "show me your wallet")
+*You can also ask me about:*
+- Wallet balances: "What's the balance of <address>?"
+- Token prices: "What's the price of <mint>?"
+- Chain statistics: "Show me the Sonic chain stats"
+- Test tokens: "Send test tokens to <address>"
+- Sending SOL: "Send 0.1 SOL to <address>"
+- Liquidity pools: "Show me info about pool <pool_id>"
+- SOL-SONIC pool: "What's the SOL-SONIC pool info?"
+- List of pools: "Show me available liquidity pools"
 
-Just send me a message, and I'll do my best to help you!
-  `);
+*Note:* For security reasons, transactions are only enabled on testnet.
+`;
+
+// Add a help command handler for /help
+bot.command('help', async (ctx) => {
+  try {
+    console.log('Help command received from user:', ctx.from?.id);
+    await ctx.replyWithMarkdown(helpMessage);
+    console.log('Help message sent successfully');
+  } catch (error) {
+    console.error('Error in help command handler:', error);
+    // Send a plain text fallback message if Markdown fails
+    try {
+      await ctx.reply("Here are the available commands: /start, /help, /wallet, /token, /stats, /faucet, /send, /pool, /pools, /solsonic");
+    } catch (fallbackError) {
+      console.error('Error sending fallback help message:', fallbackError);
+    }
+  }
+});
+
+// Also handle the built-in help command
+bot.help((ctx) => {
+  try {
+    console.log('Built-in help command received from user:', ctx.from?.id);
+    ctx.replyWithMarkdown(helpMessage);
+    console.log('Help message sent successfully');
+  } catch (error) {
+    console.error('Error in built-in help command handler:', error);
+    // Send a plain text fallback message if Markdown fails
+    try {
+      ctx.reply("Here are the available commands: /start, /help, /wallet, /token, /stats, /faucet, /send, /pool, /pools, /solsonic");
+    } catch (fallbackError) {
+      console.error('Error sending fallback help message:', fallbackError);
+    }
+  }
 });
 
 // Reset command
@@ -612,6 +664,141 @@ Wallet Status:
   return ctx.reply(statusMessage);
 });
 
+// Handle the /pool command
+bot.command('pool', async (ctx) => {
+  try {
+    // Get the pool ID from the command arguments
+    const poolId = ctx.message.text.split(' ')[1]?.trim();
+    
+    if (!poolId) {
+      await ctx.reply('Please provide a valid pool ID. Usage: /pool <pool_id>');
+      return;
+    }
+    
+    if (!isValidPoolId(poolId)) {
+      await ctx.reply('Invalid pool ID format. Please provide a valid Sega DEX pool ID.');
+      return;
+    }
+    
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    // Fetch pool information
+    console.log(`Fetching liquidity pool data for: ${poolId}`);
+    const poolData = await getLiquidityPoolById(poolId);
+    
+    if (!poolData.success || !poolData.data) {
+      console.error('Failed to fetch liquidity pool data:', poolData.error);
+      await ctx.reply(`I couldn't find information for the liquidity pool with ID: ${poolId}. ${poolData.error || 'This pool may not exist or might not be available on Sega DEX.'}`);
+      return;
+    }
+    
+    // Format and send the pool information
+    const formattedInfo = formatLiquidityPoolInfo(poolData);
+    await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error handling /pool command:', error);
+    await ctx.reply('Sorry, there was an error fetching the liquidity pool data. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
+// Handle the /solsonic command
+bot.command('solsonic', async (ctx) => {
+  try {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    // SOL-SONIC pool ID
+    const poolId = 'DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4';
+    
+    // Fetch pool information
+    console.log('Fetching SOL-SONIC liquidity pool data');
+    const poolData = await getLiquidityPoolById(poolId);
+    
+    if (!poolData.success || !poolData.data) {
+      console.error('Failed to fetch SOL-SONIC pool data:', poolData.error);
+      await ctx.reply(`I couldn't find information for the SOL-SONIC liquidity pool. ${poolData.error || 'The service might be temporarily unavailable.'}`);
+      return;
+    }
+    
+    // Format and send the pool information
+    const formattedInfo = formatLiquidityPoolInfo(poolData);
+    await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error handling /solsonic command:', error);
+    await ctx.reply('Sorry, there was an error fetching the SOL-SONIC liquidity pool data. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
+// Handle the /pools command
+bot.command('pools', async (ctx) => {
+  try {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    // Get page and pageSize from command arguments
+    const args = ctx.message.text.split(' ');
+    let page = 1;
+    let pageSize = 5;
+    
+    if (args.length > 1) {
+      const parsedPage = parseInt(args[1]);
+      if (!isNaN(parsedPage) && parsedPage > 0) {
+        page = parsedPage;
+      }
+    }
+    
+    if (args.length > 2) {
+      const parsedPageSize = parseInt(args[2]);
+      if (!isNaN(parsedPageSize) && parsedPageSize > 0 && parsedPageSize <= 10) {
+        pageSize = parsedPageSize;
+      }
+    }
+    
+    // Fetch liquidity pools
+    console.log(`Fetching liquidity pools with page=${page}, pageSize=${pageSize}`);
+    const poolsData = await getLiquidityPools(page, pageSize);
+    
+    if (!poolsData.success || !poolsData.data) {
+      console.error('Failed to fetch liquidity pools:', poolsData.error);
+      await ctx.reply(`I couldn't fetch the list of liquidity pools. ${poolsData.error || 'The service might be temporarily unavailable.'}`);
+      return;
+    }
+    
+    // Format and send the pools information
+    const formattedInfo = formatLiquidityPoolList(poolsData);
+    await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error handling /pools command:', error);
+    await ctx.reply('Sorry, there was an error fetching the liquidity pools. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
+// Handle messages asking for a list of pools
+bot.hears(/(?:list|show|get|display).*?(?:liquidity pools|pools|lps)/i, async (ctx) => {
+  try {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    // Fetch liquidity pools (first page, 5 pools)
+    console.log('Fetching liquidity pools for list request');
+    const poolsData = await getLiquidityPools(1, 5);
+    
+    if (!poolsData.success || !poolsData.data) {
+      console.error('Failed to fetch liquidity pools:', poolsData.error);
+      await ctx.reply(`I couldn't fetch the list of liquidity pools. ${poolsData.error || 'The service might be temporarily unavailable.'}`);
+      return;
+    }
+    
+    // Format and send the pools information
+    const formattedInfo = formatLiquidityPoolList(poolsData);
+    await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error handling pools list message:', error);
+    await ctx.reply('Sorry, there was an error fetching the liquidity pools. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
 // Handle text messages
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from?.id;
@@ -914,6 +1101,99 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
   
+  // Check if the message is a liquidity pool ID (direct ID)
+  if (isValidPoolId(userMessage)) {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get liquidity pool information
+      const poolData = await getLiquidityPoolById(userMessage);
+      
+      // Format and send the information
+      const formattedInfo = formatLiquidityPoolInfo(poolData);
+      await ctx.reply(formattedInfo);
+      return;
+    } catch (error) {
+      console.error('Error fetching liquidity pool information:', error);
+      await ctx.reply('Sorry, there was an error fetching the liquidity pool information. Please try again later.');
+      return;
+    }
+  }
+  
+  // Check if the message is asking for liquidity pool information
+  const poolRegex = /(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i;
+  const poolMatch = userMessage.match(poolRegex);
+  
+  // Check for SOL-SONIC pool specifically
+  const solSonicRegex = /(?:sol[\s-]sonic|wsol[\s-]sonic).*?(?:pool|lp|liquidity|pair)/i;
+  
+  // Check for liquidity pool listing request
+  const poolListRegex = /(?:list|show|get|display|view|all).*?(?:liquidity pools|pools|lps|pairs|available pools)/i;
+  
+  if (poolMatch && poolMatch[1]) {
+    const poolId = poolMatch[1].trim();
+    
+    // Validate pool ID
+    if (isValidPoolId(poolId)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        // Get liquidity pool information
+        const poolData = await getLiquidityPoolById(poolId);
+        
+        // Format and send the information
+        const formattedInfo = formatLiquidityPoolInfo(poolData);
+        await ctx.reply(formattedInfo);
+        return;
+      } catch (error) {
+        console.error('Error fetching liquidity pool information:', error);
+        await ctx.reply('Sorry, there was an error fetching the liquidity pool information. Please try again later.');
+        return;
+      }
+    }
+  } else if (solSonicRegex.test(userMessage)) {
+    // SOL-SONIC pool ID
+    const poolId = 'DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4';
+    
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get liquidity pool information
+      const poolData = await getLiquidityPoolById(poolId);
+      
+      // Format and send the information
+      const formattedInfo = formatLiquidityPoolInfo(poolData);
+      await ctx.reply(formattedInfo);
+      return;
+    } catch (error) {
+      console.error('Error fetching SOL-SONIC pool information:', error);
+      await ctx.reply('Sorry, there was an error fetching the SOL-SONIC pool information. Please try again later.');
+      return;
+    }
+  } else if (poolListRegex.test(userMessage)) {
+    // User is asking for a list of pools
+    
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    try {
+      // Get liquidity pools
+      const poolsData = await getLiquidityPools();
+      
+      // Format and send the information
+      const formattedInfo = formatLiquidityPoolList(poolsData);
+      await ctx.reply(formattedInfo);
+      return;
+    } catch (error) {
+      console.error('Error fetching liquidity pools:', error);
+      await ctx.reply('Sorry, there was an error fetching the liquidity pools. Please try again later.');
+      return;
+    }
+  }
+  
   // Add user message to session
   userSessions[userId].messages.push({
     role: 'user',
@@ -938,6 +1218,8 @@ bot.on(message('text'), async (ctx) => {
       max_tokens: 1000,
       stream: true,
     });
+
+    console.log('Using AI model:', process.env.AI_MODEL || 'gpt-4o-mini');
 
     let sentMessage: any = null;
     let accumulatedResponse = '';
@@ -1037,4 +1319,65 @@ bot.launch();
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM')); 
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// Handle messages that might be asking about liquidity pools
+bot.hears(/(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i, async (ctx) => {
+  try {
+    const match = ctx.message.text.match(/(?:liquidity pool|lp|pool).*?(?:info|data|details|stats).*?([\w\d]{32,44})/i);
+    if (match && match[1]) {
+      const poolId = match[1].trim();
+      
+      // Validate pool ID
+      if (isValidPoolId(poolId)) {
+        // Show typing indicator
+        await ctx.sendChatAction('typing');
+        
+        // Fetch pool information
+        console.log(`Fetching liquidity pool data for: ${poolId}`);
+        const poolData = await getLiquidityPoolById(poolId);
+        
+        if (!poolData.success || !poolData.data) {
+          console.error('Failed to fetch liquidity pool data:', poolData.error);
+          await ctx.reply(`I couldn't find information for the liquidity pool with ID: ${poolId}. ${poolData.error || 'This pool may not exist or might not be available on Sega DEX.'}`);
+          return;
+        }
+        
+        // Format and send the pool information
+        const formattedInfo = formatLiquidityPoolInfo(poolData);
+        await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+      }
+    }
+  } catch (error) {
+    console.error('Error handling liquidity pool message:', error);
+    await ctx.reply('Sorry, there was an error fetching the liquidity pool data. The service might be temporarily unavailable. Please try again later.');
+  }
+});
+
+// Handle messages asking about the SOL-SONIC pool
+bot.hears(/(?:sol[\s-]sonic|wsol[\s-]sonic).*?(?:pool|lp|liquidity|pair)/i, async (ctx) => {
+  try {
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+    
+    // SOL-SONIC pool ID
+    const poolId = 'DgMweMfMbmPFChTuAvTf4nriQDWpf9XX3g66kod9nsR4';
+    
+    // Fetch pool information
+    console.log('Fetching SOL-SONIC liquidity pool data');
+    const poolData = await getLiquidityPoolById(poolId);
+    
+    if (!poolData.success || !poolData.data) {
+      console.error('Failed to fetch SOL-SONIC pool data:', poolData.error);
+      await ctx.reply(`I couldn't find information for the SOL-SONIC liquidity pool. ${poolData.error || 'The service might be temporarily unavailable.'}`);
+      return;
+    }
+    
+    // Format and send the pool information
+    const formattedInfo = formatLiquidityPoolInfo(poolData);
+    await ctx.reply(formattedInfo, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error handling SOL-SONIC pool message:', error);
+    await ctx.reply('Sorry, there was an error fetching the SOL-SONIC liquidity pool data. The service might be temporarily unavailable. Please try again later.');
+  }
+}); 
