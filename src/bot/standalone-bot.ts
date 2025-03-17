@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getSonicWalletBalance, formatWalletBalance, isValidSonicAddress } from '../lib/wallet-utils';
 import { requestFaucetTokens } from '../lib/faucet-utils';
-import { getTokenPrices, formatTokenPrices, isValidTokenMint } from '../lib/token-utils';
+import { getTokenPrices, formatTokenPrices, isValidTokenMint, getTokenDetails, formatTokenDetails } from '../lib/token-utils';
 import { getSonicStats, formatSonicStats } from '../lib/stats-utils';
 import { initializeAgentWallet, getAgentWallet, isAgentWalletInitialized } from '../lib/agent-wallet';
 import { AGENT_WALLET_CONFIG, validateWalletConfig, updateWalletConfigFromEnv } from '../lib/wallet-config';
@@ -280,6 +280,36 @@ Type /help to see all available commands.
   }
 });
 
+// Add a token details command
+bot.command('token-details', async (ctx) => {
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    return ctx.reply('Please provide a token mint address. Usage: /token-details <token_mint_address>');
+  }
+
+  const mintAddress = args[1].trim();
+  
+  // Validate token mint address
+  if (!isValidTokenMint(mintAddress)) {
+    return ctx.reply('Invalid token mint address format. Please provide a valid token mint address.');
+  }
+  
+  // Show typing indicator
+  await ctx.sendChatAction('typing');
+  
+  try {
+    // Get token details
+    const tokenResponse = await getTokenDetails(mintAddress);
+    
+    // Format and send the details
+    const formattedDetails = formatTokenDetails(tokenResponse);
+    await ctx.replyWithMarkdown(formattedDetails);
+  } catch (error) {
+    console.error('Error fetching token details:', error);
+    await ctx.reply('Sorry, there was an error fetching the token details. Please try again later.');
+  }
+});
+
 // Define the help message
 const helpMessage = `
 *Sonic Agent Bot Commands*
@@ -289,16 +319,18 @@ const helpMessage = `
 /help - Show this help message
 /wallet <address> - Check wallet balance
 /token <mint> - Check token price
+/token-details <mint> - Get detailed information about a token
 /stats - Show Sonic chain statistics
 /faucet <address> - Request test tokens from faucet
 /send <amount> <address> - Send SOL to an address
 /pool <pool_id> - Show information about a specific liquidity pool
-/pools [page] [pageSize] - List available liquidity pools
+/pools - List available liquidity pools
 /solsonic - Show information about the SOL-SONIC liquidity pool
 
 *You can also ask me about:*
 - Wallet balances: "What's the balance of <address>?"
 - Token prices: "What's the price of <mint>?"
+- Token details: "Show me details for token <mint>"
 - Chain statistics: "Show me the Sonic chain stats"
 - Test tokens: "Send test tokens to <address>"
 - Sending SOL: "Send 0.1 SOL to <address>"
@@ -818,16 +850,28 @@ bot.on(message('text'), async (ctx) => {
     await ctx.sendChatAction('typing');
     
     try {
-      // Get token price
-      const priceResponse = await getTokenPrices([userMessage]);
+      // Check if the message is asking for token details
+      const isDetailsQuery = /(?:details|info|information|data)/i.test(ctx.message.text);
       
-      // Format and send the price
-      const formattedPrice = formatTokenPrices(priceResponse, [userMessage]);
-      await ctx.reply(formattedPrice);
+      if (isDetailsQuery) {
+        // Get token details
+        const tokenResponse = await getTokenDetails(userMessage);
+        
+        // Format and send the details
+        const formattedDetails = formatTokenDetails(tokenResponse);
+        await ctx.replyWithMarkdown(formattedDetails);
+      } else {
+        // Get token price
+        const priceResponse = await getTokenPrices([userMessage]);
+        
+        // Format and send the price
+        const formattedPrice = formatTokenPrices(priceResponse, [userMessage]);
+        await ctx.reply(formattedPrice);
+      }
       return;
     } catch (error) {
-      console.error('Error fetching token price:', error);
-      await ctx.reply('Sorry, there was an error fetching the token price. Please try again later.');
+      console.error('Error fetching token information:', error);
+      await ctx.reply('Sorry, there was an error fetching the token information. Please try again later.');
       return;
     }
   }
@@ -855,6 +899,36 @@ bot.on(message('text'), async (ctx) => {
       } catch (error) {
         console.error('Error fetching wallet balance:', error);
         await ctx.reply('Sorry, there was an error fetching the wallet balance. Please try again later.');
+        return;
+      }
+    }
+  }
+  
+  // Check if the message is asking for token details
+  const tokenDetailsRegex = /(?:show|get|display|what(?:'|')?s|what is|tell me about).*?(?:token|mint).*?(?:details|info|information|data).*?([\w\d]{32,44})|(?:details|info|information|data).*?(?:for|about).*?(?:token|mint).*?([\w\d]{32,44})|(?:token|mint).*?([\w\d]{32,44}).*?(?:details|info|information|data)/i;
+  const tokenDetailsMatch = userMessage.match(tokenDetailsRegex);
+  
+  if (tokenDetailsMatch) {
+    // Get the mint address from any of the capture groups
+    const mintAddress = (tokenDetailsMatch[1] || tokenDetailsMatch[2] || tokenDetailsMatch[3] || '').trim();
+    
+    // Validate mint address
+    if (mintAddress && isValidTokenMint(mintAddress)) {
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+      
+      try {
+        console.log('Fetching token details for:', mintAddress);
+        // Get token details
+        const tokenResponse = await getTokenDetails(mintAddress);
+        
+        // Format and send the details
+        const formattedDetails = formatTokenDetails(tokenResponse);
+        await ctx.replyWithMarkdown(formattedDetails);
+        return;
+      } catch (error) {
+        console.error('Error fetching token details:', error);
+        await ctx.reply('Sorry, there was an error fetching the token details. Please try again later.');
         return;
       }
     }

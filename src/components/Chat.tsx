@@ -5,7 +5,7 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import { Message } from '@/lib/ai-utils';
 import { isValidSonicAddress } from '@/lib/wallet-utils';
-import { isValidTokenMint, formatTokenPrices } from '@/lib/token-utils';
+import { isValidTokenMint, formatTokenPrices, formatTokenDetails } from '@/lib/token-utils';
 import { formatSonicStats } from '@/lib/stats-utils';
 import { isValidPoolId, formatLiquidityPoolList } from '@/lib/liquidity-pool-utils';
 import { validateAIConfig } from '@/lib/ai-config';
@@ -117,8 +117,25 @@ export default function Chat() {
         return;
       }
 
+      // Check if the message is asking for token details
+      const tokenDetailsRegex = /(?:show|get|display|what(?:'|')?s|what is|tell me about).*?(?:token|mint).*?(?:details|info|information|data).*?([\w\d]{32,44})|(?:details|info|information|data).*?(?:for|about).*?(?:token|mint).*?([\w\d]{32,44})|(?:token|mint).*?([\w\d]{32,44}).*?(?:details|info|information|data)/i;
+      const tokenDetailsMatch = content.match(tokenDetailsRegex);
+      
+      if (tokenDetailsMatch) {
+        // Get the mint address from any of the capture groups
+        const mintAddress = (tokenDetailsMatch[1] || tokenDetailsMatch[2] || tokenDetailsMatch[3] || '').trim();
+        
+        // Validate mint address
+        if (mintAddress && isValidTokenMint(mintAddress)) {
+          const tokenDetailsResponse = await checkTokenDetails(mintAddress);
+          setMessages((prev) => [...prev, { role: 'assistant', content: tokenDetailsResponse }]);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Check if the message is asking about token price
-      const tokenPriceRegex = /(?:price|token).*?([1-9A-HJ-NP-Za-km-z]{32,44})/i;
+      const tokenPriceRegex = /(?:price|cost|value|worth|how much).*?(?:token|mint|coin).*?([\w\d]{32,44})/i;
       const tokenMatch = content.match(tokenPriceRegex);
       
       if (tokenMatch && tokenMatch[1] && isValidTokenMint(tokenMatch[1])) {
@@ -941,6 +958,83 @@ export default function Chat() {
     } catch (error) {
       console.error('Error checking liquidity pools:', error);
       return 'Sorry, there was an error fetching the liquidity pools. The service might be temporarily unavailable. Please try again later.';
+    }
+  };
+
+  // Helper function to check token details
+  const checkTokenDetails = async (mintAddress: string): Promise<string> => {
+    try {
+      console.log('Fetching token details for mint address:', mintAddress);
+      // Add a timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const url = `/api/token-details?mintAddress=${mintAddress}&_t=${timestamp}`;
+      console.log('API URL with timestamp:', url);
+      
+      // Call the token details API
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      console.log('API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response from API:', response.status, errorText);
+        return `Error: Failed to get token details: ${response.status} ${response.statusText}`;
+      }
+      
+      // Get the response as text first
+      const responseText = await response.text();
+      console.log('Response text preview:', responseText.substring(0, 200) + '...');
+      
+      // Check if the response is empty or not JSON
+      if (!responseText.trim()) {
+        console.error('Empty response from API');
+        return 'Error: Received empty response from the server';
+      }
+      
+      // Check if the response starts with text (not JSON)
+      if (responseText.trim().startsWith('I ') || 
+          responseText.trim().startsWith('Sorry') || 
+          !responseText.trim().startsWith('{')) {
+        console.log('Received text response instead of JSON');
+        return responseText;
+      }
+      
+      // Try to parse the JSON
+      let tokenData;
+      try {
+        tokenData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError, 'Response text:', responseText);
+        // If we can't parse it as JSON but it's a text response, return it directly
+        if (typeof responseText === 'string' && responseText.length > 0) {
+          return responseText;
+        }
+        return `Error parsing server response: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`;
+      }
+      
+      console.log('API response data structure:', 
+        'success:', tokenData.success, 
+        'data exists:', !!tokenData.data,
+        'tokens count:', tokenData.data?.length
+      );
+      
+      if (!tokenData.success || !tokenData.data) {
+        console.error('Error in token data:', tokenData.error);
+        return `I couldn't fetch the details for this token. ${tokenData.error || 'The service might be temporarily unavailable.'}`;
+      }
+      
+      // Use the formatTokenDetails function to format the response
+      return formatTokenDetails(tokenData);
+    } catch (error) {
+      console.error('Error checking token details:', error);
+      return 'Sorry, there was an error fetching the token details. The service might be temporarily unavailable. Please try again later.';
     }
   };
 
